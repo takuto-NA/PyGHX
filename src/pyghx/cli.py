@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pyghx.compute import ComputeInputValue, evaluate_document, extract_numeric_result
 from pyghx.constants import DEFAULT_RHINO_COMPUTE_URL
-from pyghx.generate import generate_minimal_document
+from pyghx.generate import generate_addition_document, generate_minimal_document
 from pyghx.inspect import inspect_document
 from pyghx.validate import validate_document
 
@@ -69,6 +69,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     generate_parser.add_argument("--output", type=Path, required=True)
 
+    generate_addition_parser = subparsers.add_parser(
+        "generate-addition",
+        help="Generate a RhinoCompute-ready addition GHX document.",
+    )
+    generate_addition_parser.add_argument("--output", type=Path, required=True)
+    generate_addition_parser.add_argument(
+        "--document-name",
+        help="Override the DefinitionProperties Name item.",
+    )
+
     return parser
 
 
@@ -85,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_compute(arguments)
     if arguments.command == "generate-minimal":
         return _run_generate_minimal(arguments)
+    if arguments.command == "generate-addition":
+        return _run_generate_addition(arguments)
 
     parser.error(f"Unknown command: {arguments.command}")
     return 2
@@ -137,6 +149,15 @@ def _run_compute(arguments: argparse.Namespace) -> int:
 
 def _run_generate_minimal(arguments: argparse.Namespace) -> int:
     output_path = generate_minimal_document(arguments.output)
+    print(str(output_path))
+    return 0
+
+
+def _run_generate_addition(arguments: argparse.Namespace) -> int:
+    output_path = generate_addition_document(
+        arguments.output,
+        document_name=arguments.document_name,
+    )
     print(str(output_path))
     return 0
 

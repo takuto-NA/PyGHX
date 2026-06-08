@@ -20,6 +20,10 @@ XMLとして読めること、PyGHXが理解する既知構造を確認するこ
 
 空または最小構成のGHXと、サンプルから根拠を持って作れる小型定義を生成すること。
 
+## recipe generation
+
+検証済みの固定テンプレートから、RhinoCompute で実行可能な GHX を生成すること。最初のレシピは `addition` 相当（`Get Number` X/Y、`Addition`、`Context Bake`）。
+
 ## RhinoCompute
 
 GHX定義を外部プロセスとして評価するHTTPサービス。MVPでは `http://localhost:5000/` を統合テスト対象にする。

@@ -64,6 +64,27 @@ def test_cli_generate_minimal_round_trip(tmp_path: Path) -> None:
     assert summary["object_count"] == 0
 
 
+def test_cli_generate_addition_round_trip(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_addition.ghx"
+    generate_process = run_pyghx_cli(
+        ["generate-addition", "--output", str(output_path)]
+    )
+    assert generate_process.returncode == 0
+    assert output_path.exists()
+
+    inspect_process = run_pyghx_cli(["inspect", str(output_path), "--json"])
+    assert inspect_process.returncode == 0
+    summary = parse_cli_json(inspect_process.stdout)
+    assert summary["compute_contract"]["inputs"] == [
+        {"nickname": "X", "kind": "number", "optional": False, "supported": True},
+        {"nickname": "Y", "kind": "number", "optional": False, "supported": True},
+    ]
+    assert summary["compute_contract"]["outputs"][0]["label"] == "addition"
+
+    validate_process = run_pyghx_cli(["validate", str(output_path)])
+    assert validate_process.returncode == 0
+
+
 def test_cli_inspect_variation_json() -> None:
     completed_process = run_pyghx_cli(["inspect", str(VARIATION_FIXTURE_PATH), "--json"])
     assert completed_process.returncode == 0

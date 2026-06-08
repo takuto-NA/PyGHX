@@ -1,8 +1,18 @@
-"""Generate minimal GHX documents."""
+"""Generate GHX documents from templates and minimal definitions."""
 
 from __future__ import annotations
 
+import re
+from importlib import resources
 from pathlib import Path
+
+ADDITION_COMPUTE_TEMPLATE_NAME = "addition_compute.ghx"
+DEFAULT_ADDITION_DOCUMENT_NAME = "addition_compute.ghx"
+DEFINITION_NAME_PATTERN = re.compile(
+    r'(<item name="Name" type_name="gh_string" type_code="10">)'
+    r"[^<]*"
+    r"(</item>)"
+)
 
 MINIMAL_GHX_TEMPLATE = """<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <Archive name="Root">
@@ -50,3 +60,44 @@ def generate_minimal_document(output_path: Path | str) -> Path:
     path = Path(output_path)
     path.write_text(MINIMAL_GHX_TEMPLATE, encoding="utf-8")
     return path
+
+
+def generate_addition_document(
+    output_path: Path | str,
+    document_name: str | None = None,
+) -> Path:
+    """Write a RhinoCompute-ready addition GHX document to disk."""
+    path = Path(output_path)
+    resolved_document_name = _resolve_document_name(path, document_name)
+    template_text = _load_addition_compute_template_text()
+    generated_text = _replace_definition_name(template_text, resolved_document_name)
+    path.write_text(generated_text, encoding="utf-8")
+    return path
+
+
+def _resolve_document_name(output_path: Path, document_name: str | None) -> str:
+    if document_name is not None:
+        return document_name
+
+    if output_path.suffix.lower() == ".ghx":
+        return output_path.name
+
+    return DEFAULT_ADDITION_DOCUMENT_NAME
+
+
+def _load_addition_compute_template_text() -> str:
+    template_path = resources.files("pyghx.templates") / ADDITION_COMPUTE_TEMPLATE_NAME
+    return template_path.read_text(encoding="utf-8")
+
+
+def _replace_definition_name(template_text: str, document_name: str) -> str:
+    replacement = rf"\g<1>{document_name}\g<2>"
+    updated_text, replacement_count = DEFINITION_NAME_PATTERN.subn(
+        replacement,
+        template_text,
+        count=1,
+    )
+    if replacement_count != 1:
+        raise RuntimeError("Could not update DefinitionProperties Name in addition template.")
+
+    return updated_text

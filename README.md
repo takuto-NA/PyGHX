@@ -10,6 +10,10 @@ uv run pyghx inspect --json tests/fixtures/addition.ghx
 uv run pyghx inspect --json --full tests/fixtures/addition.ghx
 uv run pyghx validate tests/fixtures/addition.ghx
 uv run pyghx compute tests/fixtures/addition.ghx --number X=2 --number Y=3 --json
+uv run pyghx generate-addition --output generated_addition.ghx
+uv run pyghx inspect --json generated_addition.ghx
+uv run pyghx validate generated_addition.ghx
+uv run pyghx compute generated_addition.ghx --number X=2 --number Y=3 --json
 ```
 
 ## RhinoCompute
