@@ -14,6 +14,7 @@ from pyghx.reference.catalog import (
     PatternCatalogEntry,
     save_pattern_catalog,
 )
+from pyghx.reference.compute_boundary import ensure_rhino_compute_boundary_for_supported_pattern
 from pyghx.reference.patterns import detect_patterns
 from pyghx.validate import validate_document
 
@@ -51,13 +52,16 @@ def extract_patterns(
             output_path=pattern_output_path,
             document_name=pattern_filename,
         )
+        ensure_rhino_compute_boundary_for_supported_pattern(pattern_output_path)
 
         pattern_summary = inspect_document(pattern_output_path)
         validation_result = validate_document(pattern_output_path)
         compute_inputs = pattern_summary["compute_contract"]["inputs"]
+        context_bake_outputs = pattern_summary["context_bake_outputs"]
         rhino_compute_ready = (
             validation_result.valid
             and bool(compute_inputs)
+            and bool(context_bake_outputs)
             and all(input_entry["supported"] for input_entry in compute_inputs)
         )
         catalog_entries.append(

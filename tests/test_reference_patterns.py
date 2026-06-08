@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -18,6 +16,7 @@ from tests.helpers import (
     ADDITION_FIXTURE_PATH,
     DEFAULT_RHINO_COMPUTE_URL,
     VARIATION_FIXTURE_PATH,
+    is_rhino_compute_available,
     parse_cli_json,
     run_pyghx_cli,
 )
@@ -26,15 +25,6 @@ EXPECTED_ADDITION_COMPUTE_INPUTS = [
     {"nickname": "X", "kind": "number", "optional": False, "supported": True},
     {"nickname": "Y", "kind": "number", "optional": False, "supported": True},
 ]
-
-
-def _is_rhino_compute_available() -> bool:
-    try:
-        health_url = DEFAULT_RHINO_COMPUTE_URL.rstrip("/") + "/healthcheck"
-        with urllib.request.urlopen(health_url, timeout=3):
-            return True
-    except (urllib.error.URLError, TimeoutError):
-        return False
 
 
 def test_generate_addition_does_not_produce_pattern_catalog(tmp_path: Path) -> None:
@@ -50,6 +40,13 @@ def test_extract_patterns_from_addition_fixture(tmp_path: Path) -> None:
     pattern_ids = {pattern.pattern_id for pattern in catalog.patterns}
     assert "addition_binary" in pattern_ids
     assert catalog.source_basename == "addition.ghx"
+
+    addition_pattern = next(
+        pattern for pattern in catalog.patterns if pattern.pattern_id == "addition_binary"
+    )
+    assert addition_pattern.rhino_compute_ready is True
+    assert addition_pattern.compute_contract["outputs"]
+    assert addition_pattern.compute_contract["outputs"][0]["label"] == "addition"
 
 
 def test_generate_from_extracted_addition_pattern(tmp_path: Path) -> None:
@@ -153,7 +150,7 @@ def test_reference_pattern_agent_loop_on_addition(tmp_path: Path) -> None:
     summary = parse_cli_json(inspect_process.stdout)
     assert summary["compute_contract"]["inputs"] == EXPECTED_ADDITION_COMPUTE_INPUTS
 
-    if _is_rhino_compute_available():
+    if is_rhino_compute_available():
         compute_process = run_pyghx_cli(
             [
                 "compute",
@@ -173,7 +170,7 @@ def test_reference_pattern_agent_loop_on_addition(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_generated_addition_pattern_runs_on_rhino_compute(tmp_path: Path) -> None:
-    if not _is_rhino_compute_available():
+    if not is_rhino_compute_available():
         pytest.skip("RhinoCompute is not available at http://localhost:5000/")
 
     catalog_path = extract_patterns(ADDITION_FIXTURE_PATH, output_dir=tmp_path / "patterns")
@@ -190,12 +187,10 @@ def test_generated_addition_pattern_runs_on_rhino_compute(tmp_path: Path) -> Non
         ],
         compute_url=DEFAULT_RHINO_COMPUTE_URL,
     )
-    if not compute_result.success:
-        diagnostic_messages = "; ".join(
-            diagnostic["message"] for diagnostic in compute_result.diagnostics
-        )
-        pytest.skip(f"RhinoCompute evaluation is unavailable: {diagnostic_messages}")
-
+    assert compute_result.success is True, (
+        "RhinoCompute failed for extracted addition_binary: "
+        + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
+    )
     assert extract_numeric_result(compute_result.outputs) == 5
 
 
@@ -212,3 +207,11 @@ def test_extract_patterns_from_private_reference_when_configured(tmp_path: Path)
     catalog_path = extract_patterns(source_path, output_dir=tmp_path)
     catalog = load_pattern_catalog(catalog_path)
     assert len(catalog.patterns) >= 3
+    compute_ready_patterns = [
+        pattern for pattern in catalog.patterns if pattern.rhino_compute_ready
+    ]
+    assert len(compute_ready_patterns) >= 3
+    assert all(
+        pattern.compute_contract["outputs"]
+        for pattern in compute_ready_patterns
+    )

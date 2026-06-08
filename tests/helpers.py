@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 FIXTURES_DIRECTORY = Path(__file__).parent / "fixtures"
@@ -28,3 +30,15 @@ def run_pyghx_cli(arguments: list[str]) -> subprocess.CompletedProcess[str]:
 
 def parse_cli_json(stdout: str) -> dict:
     return json.loads(stdout)
+
+
+def is_rhino_compute_available(
+    compute_url: str = DEFAULT_RHINO_COMPUTE_URL,
+) -> bool:
+    """Return True when RhinoCompute responds to a health check."""
+    try:
+        health_url = compute_url.rstrip("/") + "/healthcheck"
+        with urllib.request.urlopen(health_url, timeout=3):
+            return True
+    except (urllib.error.URLError, TimeoutError):
+        return False

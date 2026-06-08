@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as element_tree
 
+from pyghx.inspect import inspect_document
 from pyghx.loader import load_ghx_document
+from pyghx.reference.compute_boundary import (
+    ensure_rhino_compute_boundary,
+    pattern_needs_compute_boundary,
+)
 from pyghx.reference.extract import build_pattern_ghx
 from pyghx.reference.patterns import detect_patterns, expand_instance_guid_closure
 from tests.helpers import ADDITION_FIXTURE_PATH
@@ -34,6 +39,73 @@ def test_build_pattern_ghx_is_well_formed_xml(tmp_path) -> None:
     element_tree.parse(output_path)
     generated_text = output_path.read_text(encoding="utf-8")
     assert "LoggerManager" not in generated_text
+
+
+def test_pattern_needs_compute_boundary_when_supported_inputs_exist(tmp_path) -> None:
+    document = load_ghx_document(ADDITION_FIXTURE_PATH)
+    get_number_x = next(
+        definition_object
+        for definition_object in document.objects
+        if definition_object.component_name == "Get Number"
+        and definition_object.nickname == "X"
+    )
+    addition_object = next(
+        definition_object
+        for definition_object in document.objects
+        if definition_object.component_name == "Addition"
+    )
+    assert get_number_x.instance_guid is not None
+    assert addition_object.instance_guid is not None
+
+    output_path = build_pattern_ghx(
+        source_file_path=ADDITION_FIXTURE_PATH,
+        member_instance_guids={
+            get_number_x.instance_guid,
+            addition_object.instance_guid,
+        },
+        output_path=tmp_path / "partial_addition.ghx",
+        document_name="partial_addition.ghx",
+    )
+    assert pattern_needs_compute_boundary(inspect_document(output_path)) is True
+
+
+def test_ensure_rhino_compute_boundary_appends_context_bake(tmp_path) -> None:
+    document = load_ghx_document(ADDITION_FIXTURE_PATH)
+    get_number_x = next(
+        definition_object
+        for definition_object in document.objects
+        if definition_object.component_name == "Get Number"
+        and definition_object.nickname == "X"
+    )
+    addition_object = next(
+        definition_object
+        for definition_object in document.objects
+        if definition_object.component_name == "Addition"
+    )
+    assert get_number_x.instance_guid is not None
+    assert addition_object.instance_guid is not None
+
+    output_path = build_pattern_ghx(
+        source_file_path=ADDITION_FIXTURE_PATH,
+        member_instance_guids={
+            get_number_x.instance_guid,
+            addition_object.instance_guid,
+        },
+        output_path=tmp_path / "partial_addition.ghx",
+        document_name="partial_addition.ghx",
+    )
+    partial_document = load_ghx_document(output_path)
+    assert not any(
+        definition_object.component_name == "Context Bake"
+        for definition_object in partial_document.objects
+    )
+
+    ensure_rhino_compute_boundary(output_path)
+    boundary_document = load_ghx_document(output_path)
+    assert any(
+        definition_object.component_name == "Context Bake"
+        for definition_object in boundary_document.objects
+    )
 
 
 def test_expand_instance_guid_closure_includes_upstream_inputs() -> None:

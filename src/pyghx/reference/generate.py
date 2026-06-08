@@ -10,6 +10,7 @@ from pyghx.reference.catalog import (
     load_pattern_catalog,
     resolve_catalog_path,
 )
+from pyghx.reference.compute_boundary import ensure_rhino_compute_boundary_for_supported_pattern
 
 DEFINITION_NAME_PATTERN = re.compile(
     r'(<item name="Name" type_name="gh_string" type_code="10">)'
@@ -41,6 +42,7 @@ def generate_from_pattern(
     output_file_path = Path(output_path)
     output_file_path.parent.mkdir(parents=True, exist_ok=True)
     output_file_path.write_text(generated_text, encoding="utf-8")
+    ensure_rhino_compute_boundary_for_supported_pattern(output_file_path)
     return output_file_path
 
 

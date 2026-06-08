@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import urllib.error
-import urllib.request
 from importlib import resources
 from pathlib import Path
 
@@ -17,7 +15,7 @@ from pyghx.compute import (
 from pyghx.generate import generate_addition_document, generate_minimal_document
 from pyghx.inspect import inspect_document
 from pyghx.validate import validate_document
-from tests.helpers import ADDITION_FIXTURE_PATH, DEFAULT_RHINO_COMPUTE_URL
+from tests.helpers import ADDITION_FIXTURE_PATH, DEFAULT_RHINO_COMPUTE_URL, is_rhino_compute_available
 
 EXPECTED_ADDITION_COMPUTE_INPUTS = [
     {"nickname": "X", "kind": "number", "optional": False, "supported": True},
@@ -28,25 +26,6 @@ EXPECTED_ADDITION_COMPUTE_OUTPUT = {
     "compute_param_name": "Content",
     "source_component_name": "Addition",
 }
-
-
-def _is_rhino_compute_available() -> bool:
-    try:
-        health_url = DEFAULT_RHINO_COMPUTE_URL.rstrip("/") + "/healthcheck"
-        with urllib.request.urlopen(health_url, timeout=3):
-            return True
-    except (urllib.error.URLError, TimeoutError):
-        return False
-
-
-def _skip_if_rhino_compute_unavailable(compute_result) -> None:
-    if compute_result.success:
-        return
-
-    diagnostic_messages = "; ".join(
-        diagnostic["message"] for diagnostic in compute_result.diagnostics
-    )
-    pytest.skip(f"RhinoCompute evaluation is unavailable: {diagnostic_messages}")
 
 
 def test_generate_minimal_has_no_compute_contract(tmp_path: Path) -> None:
@@ -68,7 +47,7 @@ def test_addition_compute_template_path_exists() -> None:
 
 @pytest.mark.integration
 def test_template_addition_compute_direct() -> None:
-    if not _is_rhino_compute_available():
+    if not is_rhino_compute_available():
         pytest.skip("RhinoCompute is not available at http://localhost:5000/")
 
     template_path = resources.files("pyghx.templates") / "addition_compute.ghx"
@@ -80,7 +59,10 @@ def test_template_addition_compute_direct() -> None:
         ],
         compute_url=DEFAULT_RHINO_COMPUTE_URL,
     )
-    _skip_if_rhino_compute_unavailable(compute_result)
+    assert compute_result.success is True, (
+        "RhinoCompute failed for addition template: "
+        + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
+    )
 
     assert extract_numeric_result(compute_result.outputs) == 5
 
@@ -113,7 +95,7 @@ def test_generated_addition_matches_addition_compute_contract(tmp_path: Path) ->
 
 @pytest.mark.integration
 def test_generate_addition_runs_on_rhino_compute(tmp_path: Path) -> None:
-    if not _is_rhino_compute_available():
+    if not is_rhino_compute_available():
         pytest.skip("RhinoCompute is not available at http://localhost:5000/")
 
     output_path = generate_addition_document(tmp_path / "generated.ghx")
@@ -125,6 +107,9 @@ def test_generate_addition_runs_on_rhino_compute(tmp_path: Path) -> None:
         ],
         compute_url=DEFAULT_RHINO_COMPUTE_URL,
     )
-    _skip_if_rhino_compute_unavailable(compute_result)
+    assert compute_result.success is True, (
+        "RhinoCompute failed for generated addition: "
+        + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
+    )
 
     assert extract_numeric_result(compute_result.outputs) == 5
