@@ -10,6 +10,8 @@ dist/
 
 # Generated files
 generated.ghx
+generated_*.ghx
+.pyghx/
 
 # IDE
 .idea/

@@ -24,6 +24,14 @@ XMLとして読めること、PyGHXが理解する既知構造を確認するこ
 
 検証済みの固定テンプレートから、RhinoCompute で実行可能な GHX を生成すること。最初のレシピは `addition` 相当（`Get Number` X/Y、`Addition`、`Context Bake`）。
 
+## reference pattern
+
+参照 GHX からサブグラフ（部品）を抽出し、ローカル catalog に保存した再利用単位。`pattern_id` で識別する。
+
+## pattern catalog
+
+`extract-patterns` が生成する `catalog.json` と pattern GHX 群。`source_basename` のみを記録し、絶対パスは保存しない。デフォルト出力先は `.pyghx/patterns/`（gitignore）。
+
 ## RhinoCompute
 
 GHX定義を外部プロセスとして評価するHTTPサービス。MVPでは `http://localhost:5000/` を統合テスト対象にする。

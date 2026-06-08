@@ -29,4 +29,5 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "integration: tests that require a live RhinoCompute server at localhost:5000",
+    "private_reference: tests that require PYGHX_REFERENCE_GHX pointing to a local private GHX",
 ]
