@@ -51,6 +51,7 @@ class GhxDefinitionObject:
     optional: bool | None
     source_guids: tuple[str, ...] = field(default_factory=tuple)
     owned_instance_guids: tuple[str, ...] = field(default_factory=tuple)
+    param_input_nicknames: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -205,6 +206,7 @@ def _parse_definition_object(object_chunk: GhxChunk, object_index: int) -> GhxDe
     source_guids: list[str] = []
 
     owned_instance_guids: list[str] = []
+    param_input_nicknames: list[str] = []
     if container_chunk is not None:
         instance_guid = _find_item_text(container_chunk.items, "InstanceGuid")
         nickname = _find_item_text(container_chunk.items, "NickName")
@@ -213,6 +215,7 @@ def _parse_definition_object(object_chunk: GhxChunk, object_index: int) -> GhxDe
             optional = optional_text.lower() == "true"
         source_guids.extend(_collect_source_guids(container_chunk))
         owned_instance_guids.extend(_collect_instance_guids(container_chunk))
+        param_input_nicknames.extend(_collect_param_input_nicknames(container_chunk))
 
     return GhxDefinitionObject(
         index=object_index,
@@ -223,6 +226,7 @@ def _parse_definition_object(object_chunk: GhxChunk, object_index: int) -> GhxDe
         optional=optional,
         source_guids=tuple(source_guids),
         owned_instance_guids=tuple(owned_instance_guids),
+        param_input_nicknames=tuple(param_input_nicknames),
     )
 
 
@@ -260,6 +264,21 @@ def _collect_instance_guids(container_chunk: GhxChunk) -> list[str]:
     for nested_chunk in container_chunk.chunks:
         instance_guids.extend(_collect_instance_guids(nested_chunk))
     return instance_guids
+
+
+def _collect_param_input_nicknames(container_chunk: GhxChunk) -> list[str]:
+    param_input_nicknames: list[str] = []
+    for nested_chunk in container_chunk.chunks:
+        if nested_chunk.name != "param_input":
+            param_input_nicknames.extend(_collect_param_input_nicknames(nested_chunk))
+            continue
+
+        nickname = _find_item_text(nested_chunk.items, "NickName")
+        if nickname is None:
+            nickname = _find_item_text(nested_chunk.items, "Name")
+        if nickname:
+            param_input_nicknames.append(nickname)
+    return param_input_nicknames
 
 
 def _find_chunk_recursive(chunks: tuple[GhxChunk, ...], chunk_name: str) -> GhxChunk | None:

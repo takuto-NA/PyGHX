@@ -27,6 +27,16 @@ def test_cli_inspect_json_addition() -> None:
     assert completed_process.returncode == 0
     summary = parse_cli_json(completed_process.stdout)
     assert summary["document_metadata"]["document_name"] == "addition.ghx"
+    assert summary["schema_version"] == "2"
+    assert summary["compute_contract"]["outputs"][0]["label"] == "addition"
+    assert "objects" not in summary
+
+
+def test_cli_inspect_full_json_addition() -> None:
+    completed_process = run_pyghx_cli(["inspect", str(ADDITION_FIXTURE_PATH), "--json", "--full"])
+    assert completed_process.returncode == 0
+    summary = parse_cli_json(completed_process.stdout)
+    assert "objects" in summary
 
 
 def test_cli_validate_addition() -> None:

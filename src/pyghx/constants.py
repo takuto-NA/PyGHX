@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 DEFAULT_RHINO_COMPUTE_URL = "http://localhost:5000/"
+RHINO_COMPUTE_CONTEXT_BAKE_PARAM_NAME = "Content"
 
 CONTEXTUAL_INPUT_COMPONENT_NAMES = {
     "Get Number": "number",

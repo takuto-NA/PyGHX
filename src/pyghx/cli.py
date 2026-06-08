@@ -33,6 +33,11 @@ def _build_parser() -> argparse.ArgumentParser:
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a GHX file.")
     inspect_parser.add_argument("ghx_path", type=Path)
     inspect_parser.add_argument("--json", action="store_true", help="Emit JSON summary.")
+    inspect_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Include full object inventory in JSON summary.",
+    )
 
     validate_parser = subparsers.add_parser("validate", help="Validate a GHX file.")
     validate_parser.add_argument("ghx_path", type=Path)
@@ -86,15 +91,15 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_inspect(arguments: argparse.Namespace) -> int:
-    summary = inspect_document(arguments.ghx_path)
+    summary = inspect_document(arguments.ghx_path, include_objects=arguments.full)
     if arguments.json:
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         return 0
 
-    print(f"Document: {summary['document_metadata'].get('document_name')}")
+    print(summary["summary_text"])
     print(f"Objects: {summary['object_count']}")
-    print(f"Contextual inputs: {len(summary['contextual_inputs'])}")
-    print(f"Context Bake outputs: {len(summary['context_bake_outputs'])}")
+    print(f"Compute inputs: {len(summary['compute_contract']['inputs'])}")
+    print(f"Compute outputs: {len(summary['compute_contract']['outputs'])}")
     return 0
 
 

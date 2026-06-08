@@ -207,27 +207,38 @@ def _normalize_outputs(
     raw_response: dict[str, Any],
     summary: dict[str, Any],
 ) -> dict[str, Any]:
-    output_nicknames = [
-        context_bake_output.get("nickname") or CONTEXT_BAKE_COMPONENT_NAME
-        for context_bake_output in summary.get("context_bake_outputs", [])
-    ]
-    if not output_nicknames:
-        output_nicknames = [CONTEXT_BAKE_COMPONENT_NAME]
-
-    normalized_outputs: dict[str, Any] = {}
-    response_values = raw_response.get("values", [])
-    for response_value in response_values:
+    normalized_by_param_name: dict[str, list[Any]] = {}
+    for response_value in raw_response.get("values", []):
         parameter_name = response_value.get("ParamName")
         if parameter_name is None:
             continue
-        normalized_outputs[parameter_name] = _extract_inner_tree_values(response_value)
+        normalized_by_param_name[parameter_name] = _extract_inner_tree_values(response_value)
 
-    if len(normalized_outputs) == 1 and len(output_nicknames) == 1:
-        only_key = next(iter(normalized_outputs))
-        if only_key != output_nicknames[0]:
-            normalized_outputs[output_nicknames[0]] = normalized_outputs.pop(only_key)
+    normalized_outputs: dict[str, Any] = {}
+    compute_outputs = summary.get("compute_contract", {}).get("outputs", [])
+    for compute_output in compute_outputs:
+        output_label = compute_output["label"]
+        compute_param_name = compute_output["compute_param_name"]
+        if compute_param_name not in normalized_by_param_name:
+            continue
+        normalized_outputs[output_label] = normalized_by_param_name[compute_param_name]
 
-    return normalized_outputs
+    if normalized_outputs:
+        return normalized_outputs
+
+    legacy_output_names = [
+        context_bake_output.get("nickname") or CONTEXT_BAKE_COMPONENT_NAME
+        for context_bake_output in summary.get("context_bake_outputs", [])
+    ]
+    if not legacy_output_names:
+        legacy_output_names = [CONTEXT_BAKE_COMPONENT_NAME]
+
+    fallback_outputs = dict(normalized_by_param_name)
+    if len(fallback_outputs) == 1 and len(legacy_output_names) == 1:
+        only_key = next(iter(fallback_outputs))
+        if only_key != legacy_output_names[0]:
+            fallback_outputs[legacy_output_names[0]] = fallback_outputs.pop(only_key)
+    return fallback_outputs
 
 
 def _extract_inner_tree_values(response_value: dict[str, Any]) -> list[Any]:

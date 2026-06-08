@@ -5,11 +5,11 @@ from __future__ import annotations
 from pyghx.compute import _normalize_outputs, extract_numeric_result
 
 
-def test_normalize_outputs_reads_all_inner_tree_paths() -> None:
+def test_normalize_outputs_maps_compute_param_name_to_label() -> None:
     raw_response = {
         "values": [
             {
-                "ParamName": "Context Bake",
+                "ParamName": "Content",
                 "InnerTree": {
                     "{0;0}": [{"data": "5"}],
                 },
@@ -17,16 +17,20 @@ def test_normalize_outputs_reads_all_inner_tree_paths() -> None:
         ]
     }
     summary = {
-        "context_bake_outputs": [
-            {
-                "nickname": "Context Bake",
-            }
-        ]
+        "compute_contract": {
+            "outputs": [
+                {
+                    "label": "addition",
+                    "compute_param_name": "Content",
+                    "source_component_name": "Addition",
+                }
+            ]
+        }
     }
     normalized_outputs = _normalize_outputs(raw_response, summary)
-    assert normalized_outputs["Context Bake"] == [5]
+    assert normalized_outputs == {"addition": [5]}
 
 
-def test_extract_numeric_result_prefers_named_output() -> None:
-    outputs = {"Context Bake": [5]}
+def test_extract_numeric_result_reads_labeled_output() -> None:
+    outputs = {"addition": [5]}
     assert extract_numeric_result(outputs) == 5
