@@ -10,12 +10,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pyghx.compute_encoding import build_inner_tree_data_entries
 from pyghx.constants import (
     CONTEXT_BAKE_COMPONENT_NAME,
     DEFAULT_RHINO_COMPUTE_URL,
     SUPPORTED_RHINO_COMPUTE_INPUT_KINDS,
 )
 from pyghx.inspect import inspect_document
+
+RHINO_COMPUTE_BRANCH_KEY = "0"
 
 
 @dataclass(frozen=True)
@@ -54,7 +57,8 @@ def evaluate_document(
     path = Path(source_path)
     summary = inspect_document(path)
     diagnostics: list[dict[str, str]] = []
-    unsupported_inputs = _find_unsupported_inputs(summary, input_values)
+    coalesced_input_values = _coalesce_input_values(input_values, summary)
+    unsupported_inputs = _find_unsupported_inputs(summary, coalesced_input_values)
     if unsupported_inputs:
         for unsupported_input in unsupported_inputs:
             diagnostics.append(
@@ -75,7 +79,7 @@ def evaluate_document(
             diagnostics=tuple(diagnostics),
         )
 
-    missing_nicknames = _find_missing_input_nicknames(summary, input_values)
+    missing_nicknames = _find_missing_input_nicknames(summary, coalesced_input_values)
     if missing_nicknames:
         diagnostics.append(
             {
@@ -91,7 +95,7 @@ def evaluate_document(
             diagnostics=tuple(diagnostics),
         )
 
-    request_body = _build_request_body(path, input_values)
+    request_body = _build_request_body(path, coalesced_input_values, summary)
     try:
         raw_response = _post_grasshopper_request(compute_url, request_body)
     except urllib.error.HTTPError as http_error:
@@ -133,15 +137,61 @@ def evaluate_document(
     )
 
 
-def _find_unsupported_inputs(
-    summary: dict[str, Any],
+def _coalesce_input_values(
     input_values: list[ComputeInputValue],
+    summary: dict[str, Any],
 ) -> list[ComputeInputValue]:
-    nickname_to_kind = {
+    """Merge repeated point inputs for the same nickname into one list value."""
+    nickname_to_kind = _build_nickname_to_kind_map(summary)
+    merged_values: dict[str, ComputeInputValue] = {}
+
+    for input_value in input_values:
+        resolved_kind = nickname_to_kind.get(input_value.nickname, input_value.kind)
+        existing_value = merged_values.get(input_value.nickname)
+        if existing_value is None:
+            merged_values[input_value.nickname] = ComputeInputValue(
+                nickname=input_value.nickname,
+                value=input_value.value,
+                kind=resolved_kind,
+            )
+            continue
+
+        if resolved_kind != "point":
+            merged_values[input_value.nickname] = input_value
+            continue
+
+        merged_points = _normalize_point_value_list(existing_value.value)
+        merged_points.extend(_normalize_point_value_list(input_value.value))
+        merged_values[input_value.nickname] = ComputeInputValue(
+            nickname=input_value.nickname,
+            value=merged_points,
+            kind="point",
+        )
+
+    return list(merged_values.values())
+
+
+def _normalize_point_value_list(value: Any) -> list[tuple[float, float, float]]:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, tuple):
+        return [value]
+    raise ValueError(f"Unsupported point value for coalescing: {value!r}.")
+
+
+def _build_nickname_to_kind_map(summary: dict[str, Any]) -> dict[str, str]:
+    return {
         contextual_input["nickname"]: contextual_input["kind"]
         for contextual_input in summary.get("contextual_inputs", [])
         if contextual_input.get("nickname")
     }
+
+
+def _find_unsupported_inputs(
+    summary: dict[str, Any],
+    input_values: list[ComputeInputValue],
+) -> list[ComputeInputValue]:
+    nickname_to_kind = _build_nickname_to_kind_map(summary)
     unsupported: list[ComputeInputValue] = []
     for input_value in input_values:
         contextual_kind = nickname_to_kind.get(input_value.nickname, input_value.kind)
@@ -169,22 +219,42 @@ def _find_missing_input_nicknames(
     return sorted(required_nicknames - provided_nicknames)
 
 
-def _build_request_body(path: Path, input_values: list[ComputeInputValue]) -> dict[str, Any]:
+def _build_request_body(
+    path: Path,
+    input_values: list[ComputeInputValue],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
     definition_text = path.read_text(encoding="utf-8-sig")
     encoded_definition = base64.b64encode(definition_text.encode("utf-8")).decode("utf-8")
-    values = [_build_data_tree(input_value) for input_value in input_values]
+    values = [_build_data_tree(input_value, summary) for input_value in input_values]
     return {
         "algo": encoded_definition,
         "values": values,
     }
 
 
-def _build_data_tree(input_value: ComputeInputValue) -> dict[str, Any]:
-    branch_key = "0"
+def _resolve_compute_param_name(input_value: ComputeInputValue, summary: dict[str, Any]) -> str:
+    for contextual_input in summary.get("contextual_inputs", []):
+        if contextual_input.get("nickname") != input_value.nickname:
+            continue
+        compute_param_name = contextual_input.get("compute_param_name")
+        if compute_param_name:
+            return compute_param_name
+    return input_value.nickname
+
+
+def _resolve_input_kind(input_value: ComputeInputValue, summary: dict[str, Any]) -> str:
+    nickname_to_kind = _build_nickname_to_kind_map(summary)
+    return nickname_to_kind.get(input_value.nickname, input_value.kind)
+
+
+def _build_data_tree(input_value: ComputeInputValue, summary: dict[str, Any]) -> dict[str, Any]:
+    input_kind = _resolve_input_kind(input_value, summary)
+    branch_entries = build_inner_tree_data_entries(input_kind, input_value.value)
     return {
-        "ParamName": input_value.nickname,
+        "ParamName": _resolve_compute_param_name(input_value, summary),
         "InnerTree": {
-            branch_key: [{"data": str(input_value.value)}],
+            RHINO_COMPUTE_BRANCH_KEY: branch_entries,
         },
     }
 
@@ -258,10 +328,12 @@ def _normalize_branch_data(raw_data: Any) -> Any:
     if isinstance(raw_data, str):
         stripped = raw_data.strip()
         try:
+            if stripped.startswith("{") or stripped.startswith('"'):
+                return json.loads(stripped)
             if "." in stripped or "e" in stripped.lower():
                 return float(stripped)
             return int(stripped)
-        except ValueError:
+        except (ValueError, json.JSONDecodeError):
             return raw_data
     return raw_data
 

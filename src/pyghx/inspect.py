@@ -101,6 +101,13 @@ def _build_connections(
     return connections
 
 
+def _resolve_contextual_compute_param_name(definition_object: GhxDefinitionObject) -> str:
+    """Return the RhinoCompute ParamName for a contextual input object."""
+    if definition_object.nickname:
+        return definition_object.nickname
+    return definition_object.component_name
+
+
 def _build_contextual_inputs(objects: tuple[GhxDefinitionObject, ...]) -> list[dict[str, Any]]:
     contextual_inputs: list[dict[str, Any]] = []
     for definition_object in objects:
@@ -113,6 +120,7 @@ def _build_contextual_inputs(objects: tuple[GhxDefinitionObject, ...]) -> list[d
                 "kind": input_kind,
                 "component_name": definition_object.component_name,
                 "nickname": definition_object.nickname,
+                "compute_param_name": _resolve_contextual_compute_param_name(definition_object),
                 "optional": definition_object.optional,
                 "supported_for_compute": input_kind in SUPPORTED_RHINO_COMPUTE_INPUT_KINDS,
             }
@@ -204,6 +212,7 @@ def _build_compute_contract(
         "inputs": [
             {
                 "nickname": contextual_input["nickname"],
+                "compute_param_name": contextual_input["compute_param_name"],
                 "kind": contextual_input["kind"],
                 "optional": contextual_input["optional"],
                 "supported": contextual_input["supported_for_compute"],

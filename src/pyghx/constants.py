@@ -46,4 +46,11 @@ KNOWN_COMPONENT_NAMES = set(CONTEXTUAL_INPUT_COMPONENT_NAMES) | {
     "YZ Plane",
 }
 
-SUPPORTED_RHINO_COMPUTE_INPUT_KINDS = {"number"}
+SUPPORTED_RHINO_COMPUTE_INPUT_KINDS = frozenset(
+    {
+        "number",
+        "point",
+        "string",
+        "file_path",
+    }
+)

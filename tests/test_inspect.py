@@ -39,8 +39,20 @@ def test_addition_summary_text_and_compute_contract() -> None:
     assert "X" in summary["summary_text"]
     assert "Y" in summary["summary_text"]
     assert summary["compute_contract"]["inputs"] == [
-        {"nickname": "X", "kind": "number", "optional": False, "supported": True},
-        {"nickname": "Y", "kind": "number", "optional": False, "supported": True},
+        {
+            "nickname": "X",
+            "compute_param_name": "X",
+            "kind": "number",
+            "optional": False,
+            "supported": True,
+        },
+        {
+            "nickname": "Y",
+            "compute_param_name": "Y",
+            "kind": "number",
+            "optional": False,
+            "supported": True,
+        },
     ]
     assert summary["compute_contract"]["outputs"][0]["label"] == "addition"
     assert summary["compute_contract"]["outputs"][0]["compute_param_name"] == "Content"
@@ -79,7 +91,13 @@ def test_variation_contextual_input_kinds() -> None:
     supported_inputs = [
         entry for entry in summary["contextual_inputs"] if entry["supported_for_compute"]
     ]
-    assert {entry["nickname"] for entry in supported_inputs} == {"X", "Y"}
+    assert {entry["nickname"] for entry in supported_inputs} == {
+        "X",
+        "Y",
+        "Get Point",
+        "Get String",
+        "Get File Path",
+    }
 
 
 def test_variation_multiple_context_bake_outputs_have_unique_labels() -> None:

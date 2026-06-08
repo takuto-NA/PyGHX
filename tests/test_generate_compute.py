@@ -18,8 +18,20 @@ from pyghx.validate import validate_document
 from tests.helpers import ADDITION_FIXTURE_PATH, DEFAULT_RHINO_COMPUTE_URL, is_rhino_compute_available
 
 EXPECTED_ADDITION_COMPUTE_INPUTS = [
-    {"nickname": "X", "kind": "number", "optional": False, "supported": True},
-    {"nickname": "Y", "kind": "number", "optional": False, "supported": True},
+    {
+        "nickname": "X",
+        "compute_param_name": "X",
+        "kind": "number",
+        "optional": False,
+        "supported": True,
+    },
+    {
+        "nickname": "Y",
+        "compute_param_name": "Y",
+        "kind": "number",
+        "optional": False,
+        "supported": True,
+    },
 ]
 EXPECTED_ADDITION_COMPUTE_OUTPUT = {
     "label": "addition",

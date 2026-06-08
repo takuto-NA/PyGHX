@@ -22,8 +22,20 @@ from tests.helpers import (
 )
 
 EXPECTED_ADDITION_COMPUTE_INPUTS = [
-    {"nickname": "X", "kind": "number", "optional": False, "supported": True},
-    {"nickname": "Y", "kind": "number", "optional": False, "supported": True},
+    {
+        "nickname": "X",
+        "compute_param_name": "X",
+        "kind": "number",
+        "optional": False,
+        "supported": True,
+    },
+    {
+        "nickname": "Y",
+        "compute_param_name": "Y",
+        "kind": "number",
+        "optional": False,
+        "supported": True,
+    },
 ]
 
 

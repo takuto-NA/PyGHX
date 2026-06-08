@@ -76,8 +76,20 @@ def test_cli_generate_addition_round_trip(tmp_path: Path) -> None:
     assert inspect_process.returncode == 0
     summary = parse_cli_json(inspect_process.stdout)
     assert summary["compute_contract"]["inputs"] == [
-        {"nickname": "X", "kind": "number", "optional": False, "supported": True},
-        {"nickname": "Y", "kind": "number", "optional": False, "supported": True},
+        {
+            "nickname": "X",
+            "compute_param_name": "X",
+            "kind": "number",
+            "optional": False,
+            "supported": True,
+        },
+        {
+            "nickname": "Y",
+            "compute_param_name": "Y",
+            "kind": "number",
+            "optional": False,
+            "supported": True,
+        },
     ]
     assert summary["compute_contract"]["outputs"][0]["label"] == "addition"
 

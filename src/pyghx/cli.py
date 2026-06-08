@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from pyghx.compute import ComputeInputValue, evaluate_document, extract_numeric_result
+from pyghx.compute_encoding import parse_point3d_coordinates
 from pyghx.constants import DEFAULT_RHINO_COMPUTE_URL
 from pyghx.generate import generate_addition_document, generate_minimal_document
 from pyghx.inspect import inspect_document
@@ -57,6 +58,22 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_key_value_pair,
         metavar="NICKNAME=VALUE",
         help="Numeric contextual input value.",
+    )
+    compute_parser.add_argument(
+        "--point",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=X,Y,Z",
+        help="Point contextual input value. Repeat for multiple points.",
+    )
+    compute_parser.add_argument(
+        "--text",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Text or file-path contextual input value.",
     )
     compute_parser.add_argument(
         "--url",
@@ -179,10 +196,7 @@ def _run_validate(arguments: argparse.Namespace) -> int:
 
 
 def _run_compute(arguments: argparse.Namespace) -> int:
-    input_values = [
-        ComputeInputValue(nickname=nickname, value=_parse_numeric_value(raw_value))
-        for nickname, raw_value in arguments.number
-    ]
+    input_values = _build_compute_input_values(arguments)
     compute_result = evaluate_document(
         arguments.ghx_path,
         input_values=input_values,
@@ -273,6 +287,30 @@ def _parse_numeric_value(raw_value: str) -> float | int:
     if "." in raw_value or "e" in raw_value.lower():
         return float(raw_value)
     return int(raw_value)
+
+
+def _build_compute_input_values(arguments: argparse.Namespace) -> list[ComputeInputValue]:
+    input_values: list[ComputeInputValue] = [
+        ComputeInputValue(nickname=nickname, value=_parse_numeric_value(raw_value), kind="number")
+        for nickname, raw_value in arguments.number
+    ]
+    for nickname, raw_value in arguments.point:
+        input_values.append(
+            ComputeInputValue(
+                nickname=nickname,
+                value=parse_point3d_coordinates(raw_value),
+                kind="point",
+            )
+        )
+    for nickname, raw_value in arguments.text:
+        input_values.append(
+            ComputeInputValue(
+                nickname=nickname,
+                value=raw_value,
+                kind="string",
+            )
+        )
+    return input_values
 
 
 if __name__ == "__main__":

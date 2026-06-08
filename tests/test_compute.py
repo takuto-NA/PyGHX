@@ -8,8 +8,10 @@ from pyghx.compute import (
     ComputeInputValue,
     evaluate_document,
     extract_numeric_result,
+    _build_request_body,
     _normalize_branch_data,
 )
+from pyghx.inspect import inspect_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
     DEFAULT_RHINO_COMPUTE_URL,
@@ -25,7 +27,7 @@ def test_normalize_branch_data_parses_numeric_strings() -> None:
     assert _normalize_branch_data("2.5") == 2.5
 
 
-def test_variation_non_number_inputs_are_rejected_without_live_server() -> None:
+def test_variation_line_input_is_still_unsupported() -> None:
     compute_result = evaluate_document(
         VARIATION_FIXTURE_PATH,
         input_values=[
@@ -38,6 +40,23 @@ def test_variation_non_number_inputs_are_rejected_without_live_server() -> None:
         diagnostic["code"] == "unsupported_input_kind"
         for diagnostic in compute_result.diagnostics
     )
+
+
+def test_variation_point_input_builds_grasshopper_request_body() -> None:
+    request_body = _build_request_body(
+        VARIATION_FIXTURE_PATH,
+        [
+            ComputeInputValue(
+                nickname="Get Point",
+                value=(1.0, 2.0, 0.0),
+                kind="point",
+            )
+        ],
+        inspect_document(VARIATION_FIXTURE_PATH),
+    )
+    point_value = request_body["values"][0]
+    assert point_value["ParamName"] == "Get Point"
+    assert point_value["InnerTree"]["0"][0]["data"] == '{"X": 1.0, "Y": 2.0, "Z": 0.0}'
 
 
 @pytest.mark.integration
@@ -92,3 +111,33 @@ def test_rhino_compute_addition_via_cli() -> None:
     payload = parse_cli_json(completed_process.stdout)
     assert payload["success"] is True
     assert payload["numeric_summary"] == 5
+
+
+@pytest.mark.integration
+def test_rhino_compute_variation_get_point_pattern(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    from pyghx.reference import extract_patterns, generate_from_pattern
+
+    catalog_path = extract_patterns(VARIATION_FIXTURE_PATH, output_dir=tmp_path / "patterns")
+    output_path = generate_from_pattern(
+        "contextual_input_bake_point",
+        catalog_directory=catalog_path.parent,
+        output_path=tmp_path / "generated_point.ghx",
+    )
+    compute_result = evaluate_document(
+        output_path,
+        input_values=[
+            ComputeInputValue(
+                nickname="Get Point",
+                value=(1.0, 2.0, 0.0),
+                kind="point",
+            )
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True, (
+        "RhinoCompute failed for extracted Get Point pattern: "
+        + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
+    )
