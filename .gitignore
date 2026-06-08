@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+uv.lock
+
+# Build artifacts
+dist/
+*.egg-info/
+
+# Generated files
+generated.ghx
+
+# IDE
+.idea/
+.vscode/
