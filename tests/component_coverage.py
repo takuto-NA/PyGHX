@@ -7,9 +7,17 @@ from pathlib import Path
 
 from pyghx.constants import KNOWN_COMPONENT_NAMES
 from pyghx.loader import GhxDefinitionObject, GhxDocument, load_ghx_document
-from tests.helpers import ADDITION_FIXTURE_PATH, VARIATION_FIXTURE_PATH
+from tests.helpers import (
+    ADDITION_FIXTURE_PATH,
+    CSHARP_ADDITION_FIXTURE_PATH,
+    VARIATION_FIXTURE_PATH,
+)
 
-PUBLIC_FIXTURE_PATHS = (ADDITION_FIXTURE_PATH, VARIATION_FIXTURE_PATH)
+PUBLIC_FIXTURE_PATHS = (
+    ADDITION_FIXTURE_PATH,
+    CSHARP_ADDITION_FIXTURE_PATH,
+    VARIATION_FIXTURE_PATH,
+)
 
 
 def reference_ghx_path() -> Path | None:

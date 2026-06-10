@@ -20,6 +20,7 @@ from pyghx.loader import (
     build_instance_guid_owner_map,
     load_ghx_document,
 )
+from pyghx.script_component import build_script_component_inspect_entries
 
 
 def inspect_document(source_path: Path | str, include_objects: bool = False) -> dict[str, Any]:
@@ -38,6 +39,7 @@ def build_summary(document: GhxDocument, include_objects: bool = False) -> dict[
         instance_guid_to_object,
     )
     compute_contract = _build_compute_contract(contextual_inputs, context_bake_outputs)
+    script_components = build_script_component_inspect_entries(document)
     unknown_elements = _build_unknown_elements(document)
     diagnostics = _build_diagnostics(document, contextual_inputs, context_bake_outputs)
     summary_text = _build_summary_text(
@@ -57,6 +59,7 @@ def build_summary(document: GhxDocument, include_objects: bool = False) -> dict[
         },
         "object_count": document.object_count,
         "compute_contract": compute_contract,
+        "script_components": script_components,
         "connections": connections,
         "contextual_inputs": contextual_inputs,
         "context_bake_outputs": context_bake_outputs,
@@ -346,6 +349,7 @@ def inspect_document_safe(
             "document_metadata": {},
             "object_count": 0,
             "compute_contract": {"inputs": [], "outputs": []},
+            "script_components": [],
             "connections": [],
             "contextual_inputs": [],
             "context_bake_outputs": [],

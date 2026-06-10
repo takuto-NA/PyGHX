@@ -13,6 +13,7 @@ EXPECTED_COMPACT_TOP_LEVEL_KEYS = {
     "document_metadata",
     "object_count",
     "compute_contract",
+    "script_components",
     "connections",
     "contextual_inputs",
     "context_bake_outputs",

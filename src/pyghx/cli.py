@@ -10,7 +10,18 @@ from pathlib import Path
 from pyghx.compute import ComputeInputValue, evaluate_document, extract_numeric_result
 from pyghx.compute_encoding import parse_point3d_coordinates
 from pyghx.constants import DEFAULT_RHINO_COMPUTE_URL
-from pyghx.generate import generate_addition_document, generate_minimal_document
+from pyghx.generate import (
+    generate_addition_document,
+    generate_csharp_addition_document,
+    generate_minimal_document,
+)
+from pyghx.script_edit import (
+    read_script_source_text,
+    remove_context_bake_by_instance_guid,
+    rename_contextual_input_nickname,
+    repair_duplicate_contextual_input_nicknames,
+    set_script_source_text,
+)
 from pyghx.inspect import inspect_document
 from pyghx.reference import extract_patterns, generate_from_pattern, load_pattern_catalog
 from pyghx.reference.catalog import find_pattern_entry
@@ -98,6 +109,74 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Override the DefinitionProperties Name item.",
     )
 
+    generate_csharp_addition_parser = subparsers.add_parser(
+        "generate-csharp-addition",
+        help="Generate a RhinoCompute-ready C# Script addition GHX document.",
+    )
+    generate_csharp_addition_parser.add_argument("--output", type=Path, required=True)
+    generate_csharp_addition_parser.add_argument(
+        "--document-name",
+        help="Override the DefinitionProperties Name item.",
+    )
+
+    set_script_source_parser = subparsers.add_parser(
+        "set-script-source",
+        help="Replace C# Script source text in a GHX file.",
+    )
+    set_script_source_parser.add_argument("ghx_path", type=Path)
+    set_script_source_parser.add_argument(
+        "--source-file",
+        type=Path,
+        help="Path to a C# source file.",
+    )
+    set_script_source_parser.add_argument(
+        "--source-text",
+        help="Inline C# source text.",
+    )
+    set_script_source_parser.add_argument(
+        "--instance-guid",
+        help="Target one C# Script component when multiple are present.",
+    )
+
+    rename_contextual_input_parser = subparsers.add_parser(
+        "rename-contextual-input",
+        help="Rename one contextual Get Number input nickname.",
+    )
+    rename_contextual_input_parser.add_argument("ghx_path", type=Path)
+    rename_contextual_input_parser.add_argument("instance_guid")
+    rename_contextual_input_parser.add_argument("nickname")
+
+    repair_contextual_inputs_parser = subparsers.add_parser(
+        "repair-contextual-inputs",
+        help="Assign unique contextual input nicknames by instance GUID.",
+    )
+    repair_contextual_inputs_parser.add_argument("ghx_path", type=Path)
+    repair_contextual_inputs_parser.add_argument(
+        "--nickname",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="INSTANCE_GUID=NICKNAME",
+        help="Contextual input nickname assignment.",
+    )
+
+    get_script_source_parser = subparsers.add_parser(
+        "get-script-source",
+        help="Print decoded C# Script source text from a GHX file.",
+    )
+    get_script_source_parser.add_argument("ghx_path", type=Path)
+    get_script_source_parser.add_argument(
+        "--instance-guid",
+        help="Target one C# Script component when multiple are present.",
+    )
+
+    remove_context_bake_parser = subparsers.add_parser(
+        "remove-context-bake",
+        help="Remove one Context Bake component from a GHX file.",
+    )
+    remove_context_bake_parser.add_argument("ghx_path", type=Path)
+    remove_context_bake_parser.add_argument("instance_guid")
+
     extract_patterns_parser = subparsers.add_parser(
         "extract-patterns",
         help="Extract reusable patterns from a reference GHX file.",
@@ -158,6 +237,18 @@ def main(argv: list[str] | None = None) -> int:
         return _run_generate_minimal(arguments)
     if arguments.command == "generate-addition":
         return _run_generate_addition(arguments)
+    if arguments.command == "generate-csharp-addition":
+        return _run_generate_csharp_addition(arguments)
+    if arguments.command == "set-script-source":
+        return _run_set_script_source(arguments)
+    if arguments.command == "rename-contextual-input":
+        return _run_rename_contextual_input(arguments)
+    if arguments.command == "repair-contextual-inputs":
+        return _run_repair_contextual_inputs(arguments)
+    if arguments.command == "get-script-source":
+        return _run_get_script_source(arguments)
+    if arguments.command == "remove-context-bake":
+        return _run_remove_context_bake(arguments)
     if arguments.command == "extract-patterns":
         return _run_extract_patterns(arguments)
     if arguments.command == "list-patterns":
@@ -226,6 +317,76 @@ def _run_generate_addition(arguments: argparse.Namespace) -> int:
     )
     print(str(output_path))
     return 0
+
+
+def _run_generate_csharp_addition(arguments: argparse.Namespace) -> int:
+    output_path = generate_csharp_addition_document(
+        arguments.output,
+        document_name=arguments.document_name,
+    )
+    print(str(output_path))
+    return 0
+
+
+def _run_set_script_source(arguments: argparse.Namespace) -> int:
+    source_text = _resolve_script_source_text(arguments)
+    output_path = set_script_source_text(
+        arguments.ghx_path,
+        source_text=source_text,
+        instance_guid=arguments.instance_guid,
+    )
+    print(str(output_path))
+    return 0
+
+
+def _run_rename_contextual_input(arguments: argparse.Namespace) -> int:
+    output_path = rename_contextual_input_nickname(
+        arguments.ghx_path,
+        instance_guid=arguments.instance_guid,
+        nickname=arguments.nickname,
+    )
+    print(str(output_path))
+    return 0
+
+
+def _run_repair_contextual_inputs(arguments: argparse.Namespace) -> int:
+    nickname_assignments = [
+        (instance_guid, nickname) for instance_guid, nickname in arguments.nickname
+    ]
+    output_path = repair_duplicate_contextual_input_nicknames(
+        arguments.ghx_path,
+        nickname_assignments=nickname_assignments,
+    )
+    print(str(output_path))
+    return 0
+
+
+def _run_get_script_source(arguments: argparse.Namespace) -> int:
+    source_text = read_script_source_text(
+        arguments.ghx_path,
+        instance_guid=arguments.instance_guid,
+    )
+    print(source_text)
+    return 0
+
+
+def _run_remove_context_bake(arguments: argparse.Namespace) -> int:
+    output_path = remove_context_bake_by_instance_guid(
+        arguments.ghx_path,
+        instance_guid=arguments.instance_guid,
+    )
+    print(str(output_path))
+    return 0
+
+
+def _resolve_script_source_text(arguments: argparse.Namespace) -> str:
+    if arguments.source_file is not None and arguments.source_text is not None:
+        raise SystemExit("Use either --source-file or --source-text, not both.")
+    if arguments.source_file is not None:
+        return arguments.source_file.read_text(encoding="utf-8")
+    if arguments.source_text is not None:
+        return arguments.source_text
+    raise SystemExit("One of --source-file or --source-text is required.")
 
 
 def _run_extract_patterns(arguments: argparse.Namespace) -> int:

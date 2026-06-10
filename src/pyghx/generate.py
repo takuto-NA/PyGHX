@@ -7,7 +7,9 @@ from importlib import resources
 from pathlib import Path
 
 ADDITION_COMPUTE_TEMPLATE_NAME = "addition_compute.ghx"
+CSHARP_ADDITION_COMPUTE_TEMPLATE_NAME = "csharp_addition_compute.ghx"
 DEFAULT_ADDITION_DOCUMENT_NAME = "addition_compute.ghx"
+DEFAULT_CSHARP_ADDITION_DOCUMENT_NAME = "csharp_addition_compute.ghx"
 DEFINITION_NAME_PATTERN = re.compile(
     r'(<item name="Name" type_name="gh_string" type_code="10">)'
     r"[^<]*"
@@ -68,25 +70,50 @@ def generate_addition_document(
 ) -> Path:
     """Write a RhinoCompute-ready addition GHX document to disk."""
     path = Path(output_path)
-    resolved_document_name = _resolve_document_name(path, document_name)
-    template_text = _load_addition_compute_template_text()
+    resolved_document_name = _resolve_document_name(
+        path,
+        document_name,
+        default_document_name=DEFAULT_ADDITION_DOCUMENT_NAME,
+    )
+    template_text = _load_template_text(ADDITION_COMPUTE_TEMPLATE_NAME)
     generated_text = _replace_definition_name(template_text, resolved_document_name)
     path.write_text(generated_text, encoding="utf-8")
     return path
 
 
-def _resolve_document_name(output_path: Path, document_name: str | None) -> str:
+def generate_csharp_addition_document(
+    output_path: Path | str,
+    document_name: str | None = None,
+) -> Path:
+    """Write a RhinoCompute-ready C# Script addition GHX document to disk."""
+    path = Path(output_path)
+    resolved_document_name = _resolve_document_name(
+        path,
+        document_name,
+        default_document_name=DEFAULT_CSHARP_ADDITION_DOCUMENT_NAME,
+    )
+    template_text = _load_template_text(CSHARP_ADDITION_COMPUTE_TEMPLATE_NAME)
+    generated_text = _replace_definition_name(template_text, resolved_document_name)
+    path.write_text(generated_text, encoding="utf-8")
+    return path
+
+
+def _resolve_document_name(
+    output_path: Path,
+    document_name: str | None,
+    default_document_name: str,
+) -> str:
     if document_name is not None:
         return document_name
 
     if output_path.suffix.lower() == ".ghx":
         return output_path.name
 
-    return DEFAULT_ADDITION_DOCUMENT_NAME
+    return default_document_name
 
 
-def _load_addition_compute_template_text() -> str:
-    template_path = resources.files("pyghx.templates") / ADDITION_COMPUTE_TEMPLATE_NAME
+def _load_template_text(template_name: str) -> str:
+    template_path = resources.files("pyghx.templates") / template_name
     return template_path.read_text(encoding="utf-8")
 
 

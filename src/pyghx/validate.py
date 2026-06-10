@@ -8,6 +8,7 @@ from typing import Any
 
 from pyghx.inspect import inspect_document_safe
 from pyghx.loader import GhxLoadError, load_ghx_document
+from pyghx.script_validate import build_script_validation_diagnostics
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ def validate_document(source_path: Path | str) -> ValidationResult:
 
     summary = inspect_document_safe(path)
     diagnostics.extend(summary.get("diagnostics", []))
+    diagnostics.extend(build_script_validation_diagnostics(path))
 
     for unknown_element in summary.get("unknown_elements", []):
         diagnostics.append(
