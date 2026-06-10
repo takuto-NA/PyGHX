@@ -6,6 +6,8 @@ from pyghx.inspect import build_summary, inspect_document
 from pyghx.loader import load_ghx_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
+    CSHARP_STEP_IMPORT_FIXTURE_PATH,
+    CSHARP_STEP_SCALE_FIXTURE_PATH,
     IMPORT_MODEL_FIXTURE_PATH,
     IMPORT_TWO_MODELS_FIXTURE_PATH,
     UNKNOWN_STRUCTURE_FIXTURE_PATH,
@@ -163,6 +165,43 @@ def test_import_two_models_compute_contract() -> None:
     assert output_labels == {"import_target", "import_obstacle"}
     assert output_param_names == {"TargetGeometry", "ObstacleGeometry"}
     assert summary["unknown_elements"] == []
+
+
+def test_csharp_step_import_compute_contract() -> None:
+    summary = inspect_document(CSHARP_STEP_IMPORT_FIXTURE_PATH)
+    assert summary["compute_contract"]["inputs"] == [
+        {
+            "nickname": "Get File Path",
+            "compute_param_name": "Get File Path",
+            "kind": "file_path",
+            "optional": False,
+            "supported": True,
+        }
+    ]
+    import_output = summary["compute_contract"]["outputs"][0]
+    assert import_output["label"] == "c_script"
+    assert import_output["compute_param_name"] == "GeometryPieceCount"
+    assert import_output["source_component_name"] == "C# Script"
+    script_input_names = {
+        script_input["name"] for script_input in summary["script_components"][0]["inputs"]
+    }
+    assert script_input_names == {"geometry"}
+
+
+def test_csharp_step_scale_compute_contract() -> None:
+    summary = inspect_document(CSHARP_STEP_SCALE_FIXTURE_PATH)
+    input_nicknames = {
+        contextual_input["nickname"] for contextual_input in summary["contextual_inputs"]
+    }
+    assert input_nicknames == {"Get File Path", "Multiplier"}
+    assert len(summary["compute_contract"]["outputs"]) == 1
+    scale_output = summary["compute_contract"]["outputs"][0]
+    assert scale_output["label"] == "c_script"
+    assert scale_output["compute_param_name"] == "ScaledGeometryPieceCount"
+    assert scale_output["source_component_name"] == "C# Script"
+    script_inputs = summary["script_components"][0]["inputs"]
+    script_input_names = {script_input["name"] for script_input in script_inputs}
+    assert script_input_names == {"geometry", "multiplier"}
 
 
 def test_unknown_structure_reports_unknown_elements() -> None:

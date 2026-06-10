@@ -21,6 +21,7 @@ from pyghx.validate import validate_document
 from tests.helpers import (
     CSHARP_ADDITION_FIXTURE_PATH,
     CSHARP_STEP_IMPORT_FIXTURE_PATH,
+    CSHARP_STEP_SCALE_FIXTURE_PATH,
     IMPORT_MODEL_FIXTURE_PATH,
 )
 
@@ -57,6 +58,7 @@ def test_csharp_addition_accepts_get_number_component_wiring() -> None:
     [
         CSHARP_ADDITION_FIXTURE_PATH,
         CSHARP_STEP_IMPORT_FIXTURE_PATH,
+        CSHARP_STEP_SCALE_FIXTURE_PATH,
         IMPORT_MODEL_FIXTURE_PATH,
     ],
 )
