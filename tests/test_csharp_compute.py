@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from pyghx.compute import ComputeInputValue, evaluate_document, extract_numeric_result
-from pyghx.generate import generate_csharp_addition_document
+from pyghx.generate import (
+    generate_csharp_addition_document,
+    write_default_csharp_script_source,
+)
 from pyghx.inspect import inspect_document
 from pyghx.script_edit import (
     read_script_source_text,
@@ -326,3 +329,87 @@ def test_e2e_add_csharp_number_input_via_cli_then_compute(tmp_path: Path) -> Non
     payload = parse_cli_json(compute_process.stdout)
     assert payload["success"] is True
     assert payload["numeric_summary"] == 9.0
+
+
+@pytest.mark.integration
+def test_e2e_default_csharp_script_template_then_compute(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    script_path = tmp_path / "template_script.cs"
+    graph_path = tmp_path / "graph_from_default_template.ghx"
+
+    write_default_csharp_script_source(script_path)
+    edited_source_text = script_path.read_text(encoding="utf-8").replace(
+        "a = null;",
+        "a = Convert.ToDouble(x) + Convert.ToDouble(y);",
+    )
+    script_path.write_text(edited_source_text, encoding="utf-8")
+
+    generate_csharp_addition_document(graph_path)
+    set_script_source_text(graph_path, edited_source_text)
+    assert validate_document(graph_path).valid is True
+
+    compute_result = evaluate_document(
+        graph_path,
+        input_values=[
+            ComputeInputValue(nickname="X", value=2),
+            ComputeInputValue(nickname="Y", value=3),
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True
+    assert extract_numeric_result(compute_result.outputs) == 5.0
+
+
+@pytest.mark.integration
+def test_e2e_default_csharp_script_template_via_cli_then_compute(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    script_path = tmp_path / "cli_template_script.cs"
+    graph_path = tmp_path / "cli_graph_from_default_template.ghx"
+
+    write_process = run_pyghx_cli(
+        ["write-csharp-script-template", "--output", str(script_path)]
+    )
+    assert write_process.returncode == 0
+
+    edited_source_text = script_path.read_text(encoding="utf-8").replace(
+        "a = null;",
+        "a = Convert.ToDouble(x) + Convert.ToDouble(y);",
+    )
+    script_path.write_text(edited_source_text, encoding="utf-8")
+
+    generate_process = run_pyghx_cli(
+        ["generate-csharp-addition", "--output", str(graph_path)]
+    )
+    assert generate_process.returncode == 0
+
+    set_script_process = run_pyghx_cli(
+        [
+            "set-script-source",
+            str(graph_path),
+            "--source-file",
+            str(script_path),
+        ]
+    )
+    assert set_script_process.returncode == 0
+
+    compute_process = run_pyghx_cli(
+        [
+            "compute",
+            str(graph_path),
+            "--number",
+            "X=2",
+            "--number",
+            "Y=3",
+            "--url",
+            DEFAULT_RHINO_COMPUTE_URL,
+            "--json",
+        ]
+    )
+    assert compute_process.returncode == 0
+    payload = parse_cli_json(compute_process.stdout)
+    assert payload["success"] is True
+    assert payload["numeric_summary"] == 5.0

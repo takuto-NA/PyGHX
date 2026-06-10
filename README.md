@@ -24,6 +24,7 @@ Inspect decoded C# source, validate RhinoCompute contracts, edit script text, an
 uv run pyghx inspect --json tests/fixtures/csharp_addition.ghx
 uv run pyghx validate tests/fixtures/csharp_addition.ghx
 uv run pyghx get-script-source tests/fixtures/csharp_addition.ghx
+uv run pyghx write-csharp-script-template --output my_script.cs
 uv run pyghx generate-csharp-addition --output generated_csharp_addition.ghx
 uv run pyghx compute tests/fixtures/csharp_addition.ghx --number X=2 --number Y=3 --json
 uv run pyghx set-script-source generated_csharp_addition.ghx --source-file my_script.cs
@@ -39,13 +40,17 @@ uv run pyghx remove-csharp-input generated_csharp_addition.ghx --variable-name z
 AI agent edit loop for C# Script GHX:
 
 ```powershell
+uv run pyghx write-csharp-script-template --output my_script.cs
+# Edit only the RunScript body in my_script.cs
 uv run pyghx generate-csharp-addition --output agent_graph.ghx
+uv run pyghx set-script-source agent_graph.ghx --source-file my_script.cs
 uv run pyghx add-csharp-number-input agent_graph.ghx --name Z --variable-name z
 uv run pyghx inspect --json agent_graph.ghx
 uv run pyghx validate agent_graph.ghx
-uv run pyghx set-script-source agent_graph.ghx --source-file my_script.cs
 uv run pyghx compute agent_graph.ghx --number X=2 --number Y=3 --number Z=4 --json
 ```
+
+The default C# Script template starts with `a = null;`. Replace that line with your logic before `set-script-source`. `generate-csharp-addition` keeps the existing addition sample GHX; use `write-csharp-script-template` when you want a fresh editable `.cs` starting point.
 
 `validate` checks GHX structure and RhinoCompute contracts only. It does not analyze or sandbox C# Script source code. Graph-edit diagnostics include `run_script_signature_mismatch`, `script_input_not_wired`, `script_input_missing_contextual_source`, and `script_parameter_duplicate_name`.
 

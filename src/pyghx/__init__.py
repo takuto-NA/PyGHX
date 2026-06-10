@@ -5,6 +5,8 @@ from pyghx.generate import (
     generate_addition_document,
     generate_csharp_addition_document,
     generate_minimal_document,
+    load_default_csharp_script_source,
+    write_default_csharp_script_source,
 )
 from pyghx.script_edit import (
     read_script_source_text,
@@ -33,6 +35,7 @@ __all__ = [
     "add_csharp_number_input",
     "inspect_document",
     "list_script_input_variable_names",
+    "load_default_csharp_script_source",
     "load_pattern_catalog",
     "read_script_source_text",
     "remove_csharp_input",
@@ -42,4 +45,5 @@ __all__ = [
     "repair_duplicate_contextual_input_nicknames",
     "set_script_source_text",
     "validate_document",
+    "write_default_csharp_script_source",
 ]

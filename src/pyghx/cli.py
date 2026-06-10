@@ -14,6 +14,7 @@ from pyghx.generate import (
     generate_addition_document,
     generate_csharp_addition_document,
     generate_minimal_document,
+    write_default_csharp_script_source,
 )
 from pyghx.script_edit import (
     read_script_source_text,
@@ -124,6 +125,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--document-name",
         help="Override the DefinitionProperties Name item.",
     )
+
+    write_csharp_script_template_parser = subparsers.add_parser(
+        "write-csharp-script-template",
+        help="Write the default Grasshopper C# Script source template to disk.",
+    )
+    write_csharp_script_template_parser.add_argument("--output", type=Path, required=True)
 
     set_script_source_parser = subparsers.add_parser(
         "set-script-source",
@@ -305,6 +312,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_generate_addition(arguments)
     if arguments.command == "generate-csharp-addition":
         return _run_generate_csharp_addition(arguments)
+    if arguments.command == "write-csharp-script-template":
+        return _run_write_csharp_script_template(arguments)
     if arguments.command == "set-script-source":
         return _run_set_script_source(arguments)
     if arguments.command == "rename-contextual-input":
@@ -396,6 +405,12 @@ def _run_generate_csharp_addition(arguments: argparse.Namespace) -> int:
         arguments.output,
         document_name=arguments.document_name,
     )
+    print(str(output_path))
+    return 0
+
+
+def _run_write_csharp_script_template(arguments: argparse.Namespace) -> int:
+    output_path = write_default_csharp_script_source(arguments.output)
     print(str(output_path))
     return 0
 

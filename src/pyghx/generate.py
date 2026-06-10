@@ -8,6 +8,7 @@ from pathlib import Path
 
 ADDITION_COMPUTE_TEMPLATE_NAME = "addition_compute.ghx"
 CSHARP_ADDITION_COMPUTE_TEMPLATE_NAME = "csharp_addition_compute.ghx"
+DEFAULT_CSHARP_SCRIPT_TEMPLATE_NAME = "default_csharp_script.cs"
 DEFAULT_ADDITION_DOCUMENT_NAME = "addition_compute.ghx"
 DEFAULT_CSHARP_ADDITION_DOCUMENT_NAME = "csharp_addition_compute.ghx"
 DEFINITION_NAME_PATTERN = re.compile(
@@ -78,6 +79,18 @@ def generate_addition_document(
     template_text = _load_template_text(ADDITION_COMPUTE_TEMPLATE_NAME)
     generated_text = _replace_definition_name(template_text, resolved_document_name)
     path.write_text(generated_text, encoding="utf-8")
+    return path
+
+
+def load_default_csharp_script_source() -> str:
+    """Return the default Grasshopper C# Script source template text."""
+    return _load_template_text(DEFAULT_CSHARP_SCRIPT_TEMPLATE_NAME)
+
+
+def write_default_csharp_script_source(output_path: Path | str) -> Path:
+    """Write the default Grasshopper C# Script source template to disk."""
+    path = Path(output_path)
+    path.write_text(load_default_csharp_script_source(), encoding="utf-8")
     return path
 
 

@@ -64,6 +64,10 @@ Grasshopper の C# Script コンポーネント。ソースは GHX 内の `Conta
 
 C# Script コンポーネント内の C# ソース本文。PyGHX は `inspect --json` の `script_components[].source_text` でデコード済みテキストを返し、`set-script-source` / `get-script-source` で編集・取得できる。
 
+## default C# Script template
+
+Grasshopper C# Script の標準ボイラープレート（`GH_ScriptInstance`、`RunScript` 雛形、`a = null;`）。`src/pyghx/templates/default_csharp_script.cs` に同梱し、`write-csharp-script-template` または `load_default_csharp_script_source` / `write_default_csharp_script_source` で取得する。`generate-csharp-addition` の加算サンプル GHX とは別の、エージェント向け編集起点。
+
 ## script parameter
 
 C# Script の入出力パラメータ（例: `x`, `y`, `a`, `out`）。`inspect --json` の `script_components[].inputs` / `outputs` に名前、GUID、配線、標準出力かどうかを含める。

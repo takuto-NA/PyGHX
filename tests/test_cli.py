@@ -23,6 +23,7 @@ def test_cli_help() -> None:
     completed_process = run_pyghx_cli(["--help"])
     assert completed_process.returncode == 0
     assert "inspect" in completed_process.stdout
+    assert "write-csharp-script-template" in completed_process.stdout
 
 
 def test_cli_inspect_json_addition() -> None:
@@ -213,6 +214,56 @@ def test_cli_repair_raw_csharp_fixture_via_cli(tmp_path: Path) -> None:
 
     repaired_validate_process = run_pyghx_cli(["validate", str(repaired_path)])
     assert repaired_validate_process.returncode == 0
+
+
+def test_cli_write_csharp_script_template_round_trip(tmp_path: Path) -> None:
+    output_path = tmp_path / "default_script.cs"
+    write_process = run_pyghx_cli(
+        ["write-csharp-script-template", "--output", str(output_path)]
+    )
+    assert write_process.returncode == 0
+    assert output_path.exists()
+    written_source_text = output_path.read_text(encoding="utf-8")
+    assert "RunScript(object x, object y, ref object a)" in written_source_text
+    assert "a = null;" in written_source_text
+
+
+def test_cli_write_csharp_script_template_workflow_embeds_into_ghx(tmp_path: Path) -> None:
+    script_path = tmp_path / "edited_script.cs"
+    graph_path = tmp_path / "graph_from_template.ghx"
+
+    write_process = run_pyghx_cli(
+        ["write-csharp-script-template", "--output", str(script_path)]
+    )
+    assert write_process.returncode == 0
+
+    edited_source_text = script_path.read_text(encoding="utf-8").replace(
+        "a = null;",
+        "a = Convert.ToDouble(x) + Convert.ToDouble(y);",
+    )
+    script_path.write_text(edited_source_text, encoding="utf-8")
+
+    generate_process = run_pyghx_cli(
+        ["generate-csharp-addition", "--output", str(graph_path)]
+    )
+    assert generate_process.returncode == 0
+
+    set_script_process = run_pyghx_cli(
+        [
+            "set-script-source",
+            str(graph_path),
+            "--source-file",
+            str(script_path),
+        ]
+    )
+    assert set_script_process.returncode == 0
+
+    validate_process = run_pyghx_cli(["validate", str(graph_path)])
+    assert validate_process.returncode == 0
+
+    get_script_process = run_pyghx_cli(["get-script-source", str(graph_path)])
+    assert get_script_process.returncode == 0
+    assert "Convert.ToDouble(x) + Convert.ToDouble(y)" in get_script_process.stdout
 
 
 def test_cli_add_csharp_number_input_reports_duplicate_variable_name(tmp_path: Path) -> None:
