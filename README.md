@@ -54,7 +54,45 @@ The default C# Script template starts with `a = null;`. Replace that line with y
 
 `validate` checks GHX structure and RhinoCompute contracts only. It does not analyze or sandbox C# Script source code. Graph-edit diagnostics include `run_script_signature_mismatch`, `script_input_not_wired`, `script_input_missing_contextual_source`, and `script_parameter_duplicate_name`.
 
+`validate` also reports GHX XML integrity issues such as `object_count_mismatch`, `object_index_mismatch`, `duplicate_instance_guid`, and `unresolved_source_guid`. Cosmetic count mismatches such as `library_count_mismatch` are warnings only. `compute` runs the same structural preflight and refuses to contact RhinoCompute when error-level integrity diagnostics are present.
+
 Renaming or adding C# Script inputs updates `RunScript` signatures and GHX wiring automatically. C# source bodies are not rewritten; update them with `set-script-source` when variable names change inside the script body.
+
+## Import 3DM / STEP
+
+Import geometry from STEP or other supported files through RhinoCompute-ready fixtures. Do not commit private model paths; pass them via CLI args or environment variables.
+
+Single model (`tests/fixtures/import_model.ghx`):
+
+```powershell
+uv run pyghx validate tests/fixtures/import_model.ghx
+uv run pyghx compute tests/fixtures/import_model.ghx --text "Get File Path=C:\path\to\model.stp" --json
+```
+
+Two models (`tests/fixtures/import_two_models.ghx`):
+
+```powershell
+uv run pyghx validate tests/fixtures/import_two_models.ghx
+uv run pyghx compute tests/fixtures/import_two_models.ghx `
+  --text "Target=C:\path\to\target.stp" `
+  --text "Obstacle=C:\path\to\obstacle.stp" `
+  --json
+```
+
+Optional integration tests with local STEP files:
+
+```powershell
+$env:PYGHX_IMPORT_STEP_PATH = "C:\path\to\model.stp"
+$env:PYGHX_IMPORT_TARGET_STEP_PATH = "C:\path\to\target.stp"
+$env:PYGHX_IMPORT_OBSTACLE_STEP_PATH = "C:\path\to\obstacle.stp"
+uv run pytest tests/test_compute.py -k "import_model" -m integration
+```
+
+Regenerate the two-model fixture after editing the generator script:
+
+```powershell
+uv run python scripts/create_import_two_models_fixture.py
+```
 
 ## Reference patterns (local, private)
 

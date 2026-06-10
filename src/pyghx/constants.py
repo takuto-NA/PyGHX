@@ -28,6 +28,7 @@ KNOWN_COMPONENT_NAMES = set(CONTEXTUAL_INPUT_COMPONENT_NAMES) | {
     "Custom Preview",
     "Deconstruct Brep",
     "Group",
+    "Import 3DM",
     "List Item",
     "Mass Addition",
     "Merge",

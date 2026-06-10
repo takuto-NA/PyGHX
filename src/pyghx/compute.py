@@ -16,6 +16,7 @@ from pyghx.constants import (
     DEFAULT_RHINO_COMPUTE_URL,
     SUPPORTED_RHINO_COMPUTE_INPUT_KINDS,
 )
+from pyghx.ghx_integrity import build_ghx_integrity_diagnostics
 from pyghx.inspect import inspect_document
 
 RHINO_COMPUTE_BRANCH_KEY = "0"
@@ -95,6 +96,31 @@ def evaluate_document(
             diagnostics=tuple(diagnostics),
         )
 
+    integrity_diagnostics = build_ghx_integrity_diagnostics(path)
+    blocking_integrity_diagnostics = [
+        diagnostic
+        for diagnostic in integrity_diagnostics
+        if diagnostic["level"] == "error"
+    ]
+    if blocking_integrity_diagnostics:
+        diagnostics.extend(blocking_integrity_diagnostics)
+        diagnostics.append(
+            {
+                "level": "error",
+                "code": "ghx_validation_error",
+                "message": (
+                    "GHX structural validation failed before RhinoCompute execution. "
+                    "Run `pyghx validate` for the full diagnostic list."
+                ),
+            }
+        )
+        return ComputeResult(
+            success=False,
+            outputs={},
+            raw_response=None,
+            diagnostics=tuple(diagnostics),
+        )
+
     request_body = _build_request_body(path, coalesced_input_values, summary)
     try:
         raw_response = _post_grasshopper_request(compute_url, request_body)
@@ -104,7 +130,10 @@ def evaluate_document(
             {
                 "level": "error",
                 "code": "rhino_compute_http_error",
-                "message": f"HTTP {http_error.code}: {error_body or http_error.reason}",
+                "message": (
+                    f"HTTP {http_error.code}: {error_body or http_error.reason}. "
+                    "Run `pyghx validate` to check GHX structure before retrying."
+                ),
             }
         )
         return ComputeResult(

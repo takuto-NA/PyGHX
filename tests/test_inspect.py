@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from pyghx.inspect import build_summary, inspect_document
 from pyghx.loader import load_ghx_document
-from tests.helpers import ADDITION_FIXTURE_PATH, UNKNOWN_STRUCTURE_FIXTURE_PATH, VARIATION_FIXTURE_PATH
+from tests.helpers import (
+    ADDITION_FIXTURE_PATH,
+    IMPORT_MODEL_FIXTURE_PATH,
+    IMPORT_TWO_MODELS_FIXTURE_PATH,
+    UNKNOWN_STRUCTURE_FIXTURE_PATH,
+    VARIATION_FIXTURE_PATH,
+)
 
 EXPECTED_COMPACT_TOP_LEVEL_KEYS = {
     "schema_version",
@@ -114,6 +120,49 @@ def test_variation_multiple_context_bake_outputs_have_unique_labels() -> None:
         "get_string",
         "get_file_path",
     ]
+
+
+def test_import_model_compute_contract() -> None:
+    summary = inspect_document(IMPORT_MODEL_FIXTURE_PATH)
+    assert summary["compute_contract"]["inputs"] == [
+        {
+            "nickname": "Get File Path",
+            "compute_param_name": "Get File Path",
+            "kind": "file_path",
+            "optional": False,
+            "supported": True,
+        }
+    ]
+    assert summary["compute_contract"]["outputs"] == [
+        {
+            "label": "import_3dm",
+            "compute_param_name": "Content",
+            "source_nickname": "Import 3DM",
+            "source_component_name": "Import 3DM",
+            "context_bake_index": 0,
+            "instance_guid": "84c3dc78-0996-42cc-a344-97ec6590ca7b",
+        }
+    ]
+    assert summary["unknown_elements"] == []
+
+
+def test_import_two_models_compute_contract() -> None:
+    summary = inspect_document(IMPORT_TWO_MODELS_FIXTURE_PATH)
+    input_nicknames = {
+        contextual_input["nickname"] for contextual_input in summary["contextual_inputs"]
+    }
+    output_labels = {
+        context_bake_output["label"] for context_bake_output in summary["context_bake_outputs"]
+    }
+    output_param_names = {
+        context_bake_output["compute_param_name"]
+        for context_bake_output in summary["context_bake_outputs"]
+    }
+
+    assert input_nicknames == {"Target", "Obstacle"}
+    assert output_labels == {"import_target", "import_obstacle"}
+    assert output_param_names == {"TargetGeometry", "ObstacleGeometry"}
+    assert summary["unknown_elements"] == []
 
 
 def test_unknown_structure_reports_unknown_elements() -> None:
