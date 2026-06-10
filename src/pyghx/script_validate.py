@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from pyghx.constants import CONTEXT_BAKE_COMPONENT_NAME, CONTEXTUAL_INPUT_COMPONENT_NAMES
 from pyghx.inspect import inspect_document
-from pyghx.loader import load_ghx_document
+from pyghx.loader import GhxDefinitionObject, build_instance_guid_owner_map, load_ghx_document
 from pyghx.script_component import (
     C_SHARP_SCRIPT_COMPONENT_NAME,
     ScriptComponentError,
@@ -212,18 +212,51 @@ def _build_run_script_parameter_diagnostics(
     return diagnostics
 
 
+def classify_script_input_source_diagnostic(
+    script_label: str,
+    script_input_name: str,
+    source_instance_guid: str,
+    guid_owner_map: dict[str, GhxDefinitionObject],
+) -> dict[str, str] | None:
+    """Return one wiring error diagnostic, or None when the source GUID is valid."""
+    contextual_component_names = set(CONTEXTUAL_INPUT_COMPONENT_NAMES)
+    source_owner = guid_owner_map.get(source_instance_guid)
+    if source_owner is None:
+        return {
+            "level": "error",
+            "code": "script_input_missing_contextual_source",
+            "message": (
+                f"C# Script {script_label!r} input {script_input_name!r} "
+                f"is wired to {source_instance_guid!r}, which does not "
+                "resolve to any component in this definition."
+            ),
+        }
+
+    if source_owner.component_name == C_SHARP_SCRIPT_COMPONENT_NAME:
+        return {
+            "level": "error",
+            "code": "script_input_missing_contextual_source",
+            "message": (
+                f"C# Script {script_label!r} input {script_input_name!r} "
+                f"is wired to {source_instance_guid!r}, which belongs to "
+                "another C# Script component instead of a valid data source."
+            ),
+        }
+
+    if source_owner.component_name in contextual_component_names:
+        return None
+
+    # Intra-graph wiring from another component output param (e.g. Import 3DM -> C# Script).
+    return None
+
+
 def _build_script_input_wiring_diagnostics(
     script_label: str,
     script_summary,
     document,
 ) -> list[dict[str, str]]:
     diagnostics: list[dict[str, str]] = []
-    contextual_component_names = set(CONTEXTUAL_INPUT_COMPONENT_NAMES)
-    component_name_by_instance_guid = {
-        definition_object.instance_guid: definition_object.component_name
-        for definition_object in document.objects
-        if definition_object.instance_guid is not None
-    }
+    guid_owner_map = build_instance_guid_owner_map(document.objects)
 
     for script_input in script_summary.inputs:
         if not script_input.source_instance_guids:
@@ -233,27 +266,21 @@ def _build_script_input_wiring_diagnostics(
                     "code": "script_input_not_wired",
                     "message": (
                         f"C# Script {script_label!r} input {script_input.name!r} "
-                        "is not wired to any contextual source."
+                        "is not wired to any source."
                     ),
                 }
             )
             continue
 
         for source_instance_guid in script_input.source_instance_guids:
-            source_component_name = component_name_by_instance_guid.get(source_instance_guid)
-            if source_component_name in contextual_component_names:
-                continue
-            diagnostics.append(
-                {
-                    "level": "error",
-                    "code": "script_input_missing_contextual_source",
-                    "message": (
-                        f"C# Script {script_label!r} input {script_input.name!r} "
-                        f"is wired to {source_instance_guid!r}, which is not a supported "
-                        "contextual input component."
-                    ),
-                }
+            wiring_diagnostic = classify_script_input_source_diagnostic(
+                script_label=script_label,
+                script_input_name=script_input.name,
+                source_instance_guid=source_instance_guid,
+                guid_owner_map=guid_owner_map,
             )
+            if wiring_diagnostic is not None:
+                diagnostics.append(wiring_diagnostic)
     return diagnostics
 
 

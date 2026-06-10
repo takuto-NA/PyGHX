@@ -14,6 +14,7 @@ from pyghx.compute import (
 from pyghx.inspect import inspect_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
+    CSHARP_STEP_IMPORT_FIXTURE_PATH,
     DEFAULT_RHINO_COMPUTE_URL,
     IMPORT_MODEL_FIXTURE_PATH,
     IMPORT_TWO_MODELS_FIXTURE_PATH,
@@ -161,6 +162,35 @@ def test_rhino_compute_import_model_fixture() -> None:
     import_geometry_output = compute_result.outputs.get("import_3dm")
     assert import_geometry_output
     assert len(import_geometry_output) >= 1
+
+
+@pytest.mark.integration
+def test_rhino_compute_csharp_step_import_fixture() -> None:
+    step_file_path = import_model_step_path()
+    if step_file_path is None:
+        pytest.skip("PYGHX_IMPORT_STEP_PATH is not set to an existing STEP/3DM file.")
+
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    compute_result = evaluate_document(
+        CSHARP_STEP_IMPORT_FIXTURE_PATH,
+        input_values=[
+            ComputeInputValue(
+                nickname="Get File Path",
+                value=str(step_file_path),
+                kind="file_path",
+            )
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True, (
+        "RhinoCompute failed for csharp_step_import fixture: "
+        + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
+    )
+    geometry_piece_count_output = compute_result.outputs.get("c_script")
+    assert geometry_piece_count_output
+    assert geometry_piece_count_output[0] >= 1
 
 
 @pytest.mark.integration

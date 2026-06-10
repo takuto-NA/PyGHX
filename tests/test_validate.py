@@ -5,6 +5,7 @@ from __future__ import annotations
 from pyghx.validate import validate_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
+    CSHARP_STEP_IMPORT_FIXTURE_PATH,
     IMPORT_MODEL_FIXTURE_PATH,
     IMPORT_TWO_MODELS_FIXTURE_PATH,
     MALFORMED_FIXTURE_PATH,
@@ -34,6 +35,11 @@ def test_validate_import_model_fixture() -> None:
 
 def test_validate_import_two_models_fixture() -> None:
     validation_result = validate_document(IMPORT_TWO_MODELS_FIXTURE_PATH)
+    assert validation_result.valid is True
+
+
+def test_validate_csharp_step_import_fixture() -> None:
+    validation_result = validate_document(CSHARP_STEP_IMPORT_FIXTURE_PATH)
     assert validation_result.valid is True
 
 
