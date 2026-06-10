@@ -1,27 +1,3 @@
-// Grasshopper C# Script: count geometry pieces imported from STEP via Import 3DM.
-// Responsibility: accept imported geometry and output a numeric piece count for Context Bake.
-#region Usings
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Drawing;
-
-using Rhino;
-using Rhino.Geometry;
-
-using Grasshopper;
-using Grasshopper.Kernel;
-using Grasshopper.Kernel.Data;
-using Grasshopper.Kernel.Types;
-#endregion
-
-public class Script_Instance : GH_ScriptInstance
-{
-    private void RunScript(object geometry, ref object a)
-    {
-        a = CountGeometryPieces(geometry);
-    }
-
     private static int CountGeometryPieces(object geometryValue)
     {
         if (geometryValue == null)
@@ -89,5 +65,3 @@ public class Script_Instance : GH_ScriptInstance
 
         return false;
     }
-
-}

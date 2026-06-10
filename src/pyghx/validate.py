@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pyghx.ghx_integrity import build_ghx_integrity_diagnostics
+from pyghx.preflight import build_preflight_diagnostics
 from pyghx.inspect import inspect_document_safe
 from pyghx.loader import GhxLoadError, load_ghx_document
-from pyghx.script_validate import build_script_validation_diagnostics
 
 
 @dataclass(frozen=True)
@@ -64,8 +63,7 @@ def validate_document(source_path: Path | str) -> ValidationResult:
 
     summary = inspect_document_safe(path)
     diagnostics.extend(summary.get("diagnostics", []))
-    diagnostics.extend(build_ghx_integrity_diagnostics(path))
-    diagnostics.extend(build_script_validation_diagnostics(path))
+    diagnostics.extend(build_preflight_diagnostics(path))
 
     for unknown_element in summary.get("unknown_elements", []):
         diagnostics.append(

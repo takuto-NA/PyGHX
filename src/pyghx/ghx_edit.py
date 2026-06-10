@@ -53,6 +53,127 @@ def find_child_chunk_element(
     return None
 
 
+def find_object_element_in_object_chunks(
+    object_chunks_element: element_tree.Element,
+    component_name: str,
+) -> element_tree.Element | None:
+    """Return the first Object chunk whose Name item matches component_name."""
+    for object_element in object_chunks_element.findall("chunk"):
+        object_name_item = object_element.find('./items/item[@name="Name"]')
+        if object_name_item is not None and object_name_item.text == component_name:
+            return object_element
+    return None
+
+
+def find_items_element(parent_element: element_tree.Element) -> element_tree.Element | None:
+    """Return the direct items element under one XML parent."""
+    return parent_element.find("items")
+
+
+def set_chunk_item_text(
+    parent_element: element_tree.Element,
+    item_name: str,
+    item_text: str,
+) -> None:
+    """Set one named item on a chunk that owns an items child element."""
+    items_element = find_items_element(parent_element)
+    if items_element is None:
+        raise GhxEditError(f"Items element was not found while setting {item_name!r}.")
+    set_item_text(items_element, item_name, item_text)
+
+
+def find_object_container_element(object_element: element_tree.Element) -> element_tree.Element:
+    """Return the Container chunk for one Object element."""
+    container_element = object_element.find('./chunks/chunk[@name="Container"]')
+    if container_element is None:
+        raise GhxEditError("Container chunk was not found.")
+    return container_element
+
+
+def set_object_container_nickname(object_element: element_tree.Element, nickname: str) -> None:
+    """Set Container NickName on one Object chunk."""
+    set_chunk_item_text(find_object_container_element(object_element), "NickName", nickname)
+
+
+def set_object_container_item_text(
+    object_element: element_tree.Element,
+    item_name: str,
+    item_text: str,
+) -> None:
+    """Set one Container item on an Object chunk."""
+    set_chunk_item_text(find_object_container_element(object_element), item_name, item_text)
+
+
+def read_object_param_instance_guid(
+    object_element: element_tree.Element,
+    parameter_nickname: str,
+) -> str:
+    """Return one param_input/param_output InstanceGuid by NickName."""
+    container_element = find_object_container_element(object_element)
+    container_chunks_element = container_element.find("chunks")
+    if container_chunks_element is None:
+        raise GhxEditError("Container chunks element was not found.")
+
+    for parameter_chunk in container_chunks_element.findall("chunk"):
+        chunk_name = parameter_chunk.get("name")
+        if chunk_name not in {"param_input", "param_output"}:
+            continue
+        nickname_item = parameter_chunk.find('./items/item[@name="NickName"]')
+        if nickname_item is None or nickname_item.text != parameter_nickname:
+            continue
+        instance_guid_item = parameter_chunk.find('./items/item[@name="InstanceGuid"]')
+        if instance_guid_item is None or not instance_guid_item.text:
+            raise GhxEditError(f"Parameter {parameter_nickname!r} is missing InstanceGuid.")
+        return instance_guid_item.text
+
+    raise GhxEditError(f"Parameter {parameter_nickname!r} was not found.")
+
+
+def set_object_param_item_text(
+    object_element: element_tree.Element,
+    parameter_lookup_value: str,
+    item_name: str,
+    item_text: str,
+    match_item_name: str = "NickName",
+) -> None:
+    """Set one item on a param_input/param_output chunk located by NickName or Name."""
+    container_element = find_object_container_element(object_element)
+    container_chunks_element = container_element.find("chunks")
+    if container_chunks_element is None:
+        raise GhxEditError("Container chunks element was not found.")
+
+    for parameter_chunk in container_chunks_element.findall("chunk"):
+        chunk_name = parameter_chunk.get("name")
+        if chunk_name not in {"param_input", "param_output"}:
+            continue
+        lookup_item = parameter_chunk.find(f'./items/item[@name="{match_item_name}"]')
+        if lookup_item is None or lookup_item.text != parameter_lookup_value:
+            continue
+        item_element = parameter_chunk.find(f'./items/item[@name="{item_name}"]')
+        if item_element is None:
+            raise GhxEditError(
+                f"Parameter {parameter_lookup_value!r} is missing item {item_name!r}."
+            )
+        item_element.text = item_text
+        return
+
+    raise GhxEditError(f"Parameter {parameter_lookup_value!r} was not found.")
+
+
+def offset_object_bounds_y(object_element: element_tree.Element, vertical_offset: int) -> None:
+    """Offset one component's Bounds Y coordinate by vertical_offset."""
+    if vertical_offset == 0:
+        return
+
+    container_element = find_object_container_element(object_element)
+    for bounds_element in container_element.iter("item"):
+        if bounds_element.get("name") != "Bounds":
+            continue
+        y_element = bounds_element.find("Y")
+        if y_element is not None and y_element.text is not None:
+            y_element.text = str(int(float(y_element.text)) + vertical_offset)
+
+
 def find_definition_objects_element(
     root_element: element_tree.Element,
 ) -> element_tree.Element | None:

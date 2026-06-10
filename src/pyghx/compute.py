@@ -16,7 +16,11 @@ from pyghx.constants import (
     DEFAULT_RHINO_COMPUTE_URL,
     SUPPORTED_RHINO_COMPUTE_INPUT_KINDS,
 )
-from pyghx.ghx_integrity import build_ghx_integrity_diagnostics
+from pyghx.preflight import (
+    blocking_preflight_diagnostics,
+    build_preflight_diagnostics,
+    has_blocking_preflight_errors,
+)
 from pyghx.inspect import inspect_document
 
 RHINO_COMPUTE_BRANCH_KEY = "0"
@@ -96,20 +100,15 @@ def evaluate_document(
             diagnostics=tuple(diagnostics),
         )
 
-    integrity_diagnostics = build_ghx_integrity_diagnostics(path)
-    blocking_integrity_diagnostics = [
-        diagnostic
-        for diagnostic in integrity_diagnostics
-        if diagnostic["level"] == "error"
-    ]
-    if blocking_integrity_diagnostics:
-        diagnostics.extend(blocking_integrity_diagnostics)
+    preflight_diagnostics = build_preflight_diagnostics(path)
+    if has_blocking_preflight_errors(preflight_diagnostics):
+        diagnostics.extend(blocking_preflight_diagnostics(preflight_diagnostics))
         diagnostics.append(
             {
                 "level": "error",
                 "code": "ghx_validation_error",
                 "message": (
-                    "GHX structural validation failed before RhinoCompute execution. "
+                    "GHX validation failed before RhinoCompute execution. "
                     "Run `pyghx validate` for the full diagnostic list."
                 ),
             }

@@ -79,8 +79,8 @@ def test_run_script_signature_mismatch_is_reported(tmp_path) -> None:
     )
 
 
-def test_script_input_missing_contextual_source_is_reported(tmp_path) -> None:
-    output_path = tmp_path / "invalid_contextual_source.ghx"
+def test_script_input_csharp_self_reference_is_reported(tmp_path) -> None:
+    output_path = tmp_path / "invalid_csharp_self_reference.ghx"
     shutil.copy(CSHARP_ADDITION_FIXTURE_PATH, output_path)
 
     root_element = element_tree.parse(output_path).getroot()
@@ -95,7 +95,7 @@ def test_script_input_missing_contextual_source_is_reported(tmp_path) -> None:
     validation_result = validate_document(output_path)
     assert validation_result.valid is False
     assert any(
-        diagnostic["code"] == "script_input_missing_contextual_source"
+        diagnostic["code"] == "script_input_csharp_self_reference"
         for diagnostic in validation_result.diagnostics
     )
 

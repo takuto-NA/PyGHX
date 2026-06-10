@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from enum import Enum
+
 from pyghx.constants import CONTEXT_BAKE_COMPONENT_NAME, CONTEXTUAL_INPUT_COMPONENT_NAMES
 from pyghx.inspect import inspect_document
 from pyghx.loader import GhxDefinitionObject, build_instance_guid_owner_map, load_ghx_document
@@ -17,6 +19,21 @@ from pyghx.script_source import (
     build_run_script_signature_warning,
     parse_run_script_signature,
 )
+
+SCRIPT_INPUT_SOURCE_VALID = "valid"
+SCRIPT_INPUT_SOURCE_UNKNOWN = "unknown"
+SCRIPT_INPUT_SOURCE_CSHARP_SELF_REFERENCE = "csharp_self_reference"
+
+SCRIPT_INPUT_ERROR_CODE_UNKNOWN_SOURCE = "script_input_unknown_source"
+SCRIPT_INPUT_ERROR_CODE_CSHARP_SELF_REFERENCE = "script_input_csharp_self_reference"
+
+
+class ScriptInputSourceResolution(str, Enum):
+    """Resolved outcome for one C# Script input source GUID."""
+
+    VALID = SCRIPT_INPUT_SOURCE_VALID
+    UNKNOWN = SCRIPT_INPUT_SOURCE_UNKNOWN
+    CSHARP_SELF_REFERENCE = SCRIPT_INPUT_SOURCE_CSHARP_SELF_REFERENCE
 
 
 def build_script_validation_diagnostics(source_path: str) -> list[dict[str, str]]:
@@ -212,19 +229,35 @@ def _build_run_script_parameter_diagnostics(
     return diagnostics
 
 
-def classify_script_input_source_diagnostic(
+def resolve_script_input_source(
+    source_instance_guid: str,
+    guid_owner_map: dict[str, GhxDefinitionObject],
+) -> ScriptInputSourceResolution:
+    """Resolve one C# Script input source GUID to a wiring outcome."""
+    source_owner = guid_owner_map.get(source_instance_guid)
+    if source_owner is None:
+        return ScriptInputSourceResolution.UNKNOWN
+
+    if source_owner.component_name == C_SHARP_SCRIPT_COMPONENT_NAME:
+        return ScriptInputSourceResolution.CSHARP_SELF_REFERENCE
+
+    return ScriptInputSourceResolution.VALID
+
+
+def build_script_input_source_diagnostic(
     script_label: str,
     script_input_name: str,
     source_instance_guid: str,
-    guid_owner_map: dict[str, GhxDefinitionObject],
+    source_resolution: ScriptInputSourceResolution,
 ) -> dict[str, str] | None:
     """Return one wiring error diagnostic, or None when the source GUID is valid."""
-    contextual_component_names = set(CONTEXTUAL_INPUT_COMPONENT_NAMES)
-    source_owner = guid_owner_map.get(source_instance_guid)
-    if source_owner is None:
+    if source_resolution == ScriptInputSourceResolution.VALID:
+        return None
+
+    if source_resolution == ScriptInputSourceResolution.UNKNOWN:
         return {
             "level": "error",
-            "code": "script_input_missing_contextual_source",
+            "code": SCRIPT_INPUT_ERROR_CODE_UNKNOWN_SOURCE,
             "message": (
                 f"C# Script {script_label!r} input {script_input_name!r} "
                 f"is wired to {source_instance_guid!r}, which does not "
@@ -232,22 +265,34 @@ def classify_script_input_source_diagnostic(
             ),
         }
 
-    if source_owner.component_name == C_SHARP_SCRIPT_COMPONENT_NAME:
-        return {
-            "level": "error",
-            "code": "script_input_missing_contextual_source",
-            "message": (
-                f"C# Script {script_label!r} input {script_input_name!r} "
-                f"is wired to {source_instance_guid!r}, which belongs to "
-                "another C# Script component instead of a valid data source."
-            ),
-        }
+    return {
+        "level": "error",
+        "code": SCRIPT_INPUT_ERROR_CODE_CSHARP_SELF_REFERENCE,
+        "message": (
+            f"C# Script {script_label!r} input {script_input_name!r} "
+            f"is wired to {source_instance_guid!r}, which belongs to "
+            "another C# Script component instead of a valid data source."
+        ),
+    }
 
-    if source_owner.component_name in contextual_component_names:
-        return None
 
-    # Intra-graph wiring from another component output param (e.g. Import 3DM -> C# Script).
-    return None
+def classify_script_input_source_diagnostic(
+    script_label: str,
+    script_input_name: str,
+    source_instance_guid: str,
+    guid_owner_map: dict[str, GhxDefinitionObject],
+) -> dict[str, str] | None:
+    """Return one wiring error diagnostic, or None when the source GUID is valid."""
+    source_resolution = resolve_script_input_source(
+        source_instance_guid=source_instance_guid,
+        guid_owner_map=guid_owner_map,
+    )
+    return build_script_input_source_diagnostic(
+        script_label=script_label,
+        script_input_name=script_input_name,
+        source_instance_guid=source_instance_guid,
+        source_resolution=source_resolution,
+    )
 
 
 def _build_script_input_wiring_diagnostics(

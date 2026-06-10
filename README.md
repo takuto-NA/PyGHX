@@ -52,9 +52,9 @@ uv run pyghx compute agent_graph.ghx --number X=2 --number Y=3 --number Z=4 --js
 
 The default C# Script template starts with `a = null;`. Replace that line with your logic before `set-script-source`. `generate-csharp-addition` keeps the existing addition sample GHX; use `write-csharp-script-template` when you want a fresh editable `.cs` starting point.
 
-`validate` checks GHX structure and RhinoCompute contracts only. It does not analyze or sandbox C# Script source code. Graph-edit diagnostics include `run_script_signature_mismatch`, `script_input_not_wired`, `script_input_missing_contextual_source`, and `script_parameter_duplicate_name`.
+`validate` checks GHX structure and RhinoCompute contracts only. It does not analyze or sandbox C# Script source code. Graph-edit diagnostics include `run_script_signature_mismatch`, `script_input_not_wired`, `script_input_unknown_source`, `script_input_csharp_self_reference`, and `script_parameter_duplicate_name`.
 
-`validate` also reports GHX XML integrity issues such as `object_count_mismatch`, `object_index_mismatch`, `duplicate_instance_guid`, and `unresolved_source_guid`. Cosmetic count mismatches such as `library_count_mismatch` are warnings only. `compute` runs the same structural preflight and refuses to contact RhinoCompute when error-level integrity diagnostics are present.
+`validate` also reports GHX XML integrity issues such as `object_count_mismatch`, `object_index_mismatch`, `duplicate_instance_guid`, and `unresolved_source_guid`. Cosmetic count mismatches such as `library_count_mismatch` are warnings only. `compute` runs the same preflight checks as `validate` for structural and C# Script wiring diagnostics, and refuses to contact RhinoCompute when error-level preflight diagnostics are present.
 
 Renaming or adding C# Script inputs updates `RunScript` signatures and GHX wiring automatically. C# source bodies are not rewritten; update them with `set-script-source` when variable names change inside the script body.
 
@@ -92,6 +92,35 @@ Regenerate the two-model fixture after editing the generator script:
 
 ```powershell
 uv run python scripts/create_import_two_models_fixture.py
+```
+
+C# Script + STEP import fixtures (`tests/fixtures/csharp_step_import.ghx`, `tests/fixtures/csharp_step_scale.ghx`):
+
+```powershell
+uv run pyghx validate tests/fixtures/csharp_step_import.ghx
+uv run pyghx compute tests/fixtures/csharp_step_import.ghx --text "Get File Path=C:\path\to\model.stp" --json
+uv run pyghx validate tests/fixtures/csharp_step_scale.ghx
+uv run pyghx compute tests/fixtures/csharp_step_scale.ghx `
+  --text "Get File Path=C:\path\to\model.stp" `
+  --number Multiplier=5 `
+  --json
+```
+
+Regenerate C# STEP fixtures after editing generator scripts or the shared geometry-counting snippet:
+
+```powershell
+uv run python scripts/create_csharp_step_import_fixture.py
+uv run python scripts/create_csharp_step_scale_fixture.py
+uv run python scripts/write_csharp_step_demo_scripts.py
+```
+
+The demo C# sources under `scripts/demo_csharp_step_*.cs` are generated from the same compose path as the embedded C# Script bodies. Edit `scripts/snippets/csharp_geometry_piece_counting.cs` or the constants in `pyghx.fixture_generation`, then rerun the commands above.
+
+Optional integration tests for C# STEP fixtures:
+
+```powershell
+$env:PYGHX_IMPORT_STEP_PATH = "C:\path\to\model.stp"
+uv run pytest tests/test_compute.py -k "csharp_step" -m integration
 ```
 
 ## Reference patterns (local, private)
