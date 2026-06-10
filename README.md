@@ -123,6 +123,29 @@ $env:PYGHX_IMPORT_STEP_PATH = "C:\path\to\model.stp"
 uv run pytest tests/test_compute.py -k "csharp_step" -m integration
 ```
 
+## Brep analysis (STEP + point)
+
+Import a STEP model, test a sample point against the Brep, and read inside/distance/closest-point/normal outputs through RhinoCompute (`tests/fixtures/brep_points.ghx`).
+
+The STEP file path must exist on the RhinoCompute host machine. Do not commit private model paths; pass them via CLI args or environment variables.
+
+```powershell
+uv run pyghx validate tests/fixtures/brep_points.ghx
+uv run pyghx inspect --json tests/fixtures/brep_points.ghx
+uv run pyghx compute tests/fixtures/brep_points.ghx `
+  --text "Get File Path=C:\path\to\model.stp" `
+  --point "Get Point=0,0,0" `
+  --json
+```
+
+Optional integration tests with a local STEP file and sample point:
+
+```powershell
+$env:PYGHX_BREP_STEP_PATH = "C:\path\to\model.stp"
+$env:PYGHX_BREP_SAMPLE_POINT = "0,0,0"
+uv run pytest tests/test_compute.py -k "brep_points" -m integration
+```
+
 ## Reference patterns (local, private)
 
 Extract reusable subgraph patterns from a reference GHX into a local catalog. Output stays under `.pyghx/` (gitignored). Do not commit proprietary GHX files.

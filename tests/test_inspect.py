@@ -162,7 +162,7 @@ def test_import_two_models_compute_contract() -> None:
     }
 
     assert input_nicknames == {"Target", "Obstacle"}
-    assert output_labels == {"import_target", "import_obstacle"}
+    assert output_labels == {"target_geometry", "obstacle_geometry"}
     assert output_param_names == {"TargetGeometry", "ObstacleGeometry"}
     assert summary["unknown_elements"] == []
 
@@ -179,7 +179,7 @@ def test_csharp_step_import_compute_contract() -> None:
         }
     ]
     import_output = summary["compute_contract"]["outputs"][0]
-    assert import_output["label"] == "c_script"
+    assert import_output["label"] == "geometry_piece_count"
     assert import_output["compute_param_name"] == "GeometryPieceCount"
     assert import_output["source_component_name"] == "C# Script"
     script_input_names = {
@@ -196,7 +196,7 @@ def test_csharp_step_scale_compute_contract() -> None:
     assert input_nicknames == {"Get File Path", "Multiplier"}
     assert len(summary["compute_contract"]["outputs"]) == 1
     scale_output = summary["compute_contract"]["outputs"][0]
-    assert scale_output["label"] == "c_script"
+    assert scale_output["label"] == "scaled_geometry_piece_count"
     assert scale_output["compute_param_name"] == "ScaledGeometryPieceCount"
     assert scale_output["source_component_name"] == "C# Script"
     script_inputs = summary["script_components"][0]["inputs"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pyghx.validate import validate_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
+    BREP_POINTS_FIXTURE_PATH,
     CSHARP_STEP_IMPORT_FIXTURE_PATH,
     CSHARP_STEP_SCALE_FIXTURE_PATH,
     IMPORT_MODEL_FIXTURE_PATH,
@@ -47,6 +48,15 @@ def test_validate_csharp_step_import_fixture() -> None:
 def test_validate_csharp_step_scale_fixture() -> None:
     validation_result = validate_document(CSHARP_STEP_SCALE_FIXTURE_PATH)
     assert validation_result.valid is True
+
+
+def test_validate_brep_points_fixture() -> None:
+    validation_result = validate_document(BREP_POINTS_FIXTURE_PATH)
+    assert validation_result.valid is True
+    assert not any(
+        diagnostic["code"] == "unknown_component"
+        for diagnostic in validation_result.diagnostics
+    )
 
 
 def test_validate_malformed_fixture() -> None:

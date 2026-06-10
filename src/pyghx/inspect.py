@@ -149,13 +149,16 @@ def _build_context_bake_outputs(
             if source_guid in instance_guid_to_object
         ]
         primary_source = source_objects[0] if source_objects else None
+        compute_param_name = _resolve_compute_param_name(definition_object)
         label = _build_unique_output_label(
             source_nickname=primary_source.nickname if primary_source else None,
             source_component_name=primary_source.component_name if primary_source else None,
             bake_index=bake_index,
             used_labels=used_labels,
+            preferred_base_label=_resolve_preferred_context_bake_label(
+                compute_param_name=compute_param_name,
+            ),
         )
-        compute_param_name = _resolve_compute_param_name(definition_object)
         context_bake_outputs.append(
             {
                 "index": bake_index,
@@ -178,13 +181,26 @@ def _resolve_compute_param_name(definition_object: GhxDefinitionObject) -> str:
     return RHINO_COMPUTE_CONTEXT_BAKE_PARAM_NAME
 
 
+def _resolve_preferred_context_bake_label(compute_param_name: str) -> str | None:
+    """Return a slugified Context Bake param nickname when it is not the generic Content param."""
+    if compute_param_name == RHINO_COMPUTE_CONTEXT_BAKE_PARAM_NAME:
+        return None
+    return _slugify_label(compute_param_name)
+
+
 def _build_unique_output_label(
     source_nickname: str | None,
     source_component_name: str | None,
     bake_index: int,
     used_labels: set[str],
+    preferred_base_label: str | None = None,
 ) -> str:
-    base_label = _slugify_label(source_nickname or source_component_name or f"context_bake_{bake_index}")
+    if preferred_base_label is not None:
+        base_label = preferred_base_label
+    else:
+        base_label = _slugify_label(
+            source_nickname or source_component_name or f"context_bake_{bake_index}"
+        )
     if base_label not in used_labels:
         used_labels.add(base_label)
         return base_label
@@ -199,7 +215,9 @@ def _build_unique_output_label(
 
 
 def _slugify_label(raw_label: str) -> str:
-    normalized_label = raw_label.strip().lower()
+    normalized_label = raw_label.strip()
+    normalized_label = re.sub(r"([a-z])([A-Z])", r"\1_\2", normalized_label)
+    normalized_label = normalized_label.lower()
     normalized_label = re.sub(r"[^a-z0-9]+", "_", normalized_label)
     normalized_label = normalized_label.strip("_")
     if normalized_label:

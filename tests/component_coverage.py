@@ -9,6 +9,7 @@ from pyghx.constants import KNOWN_COMPONENT_NAMES
 from pyghx.loader import GhxDefinitionObject, GhxDocument, load_ghx_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
+    BREP_POINTS_FIXTURE_PATH,
     CSHARP_ADDITION_FIXTURE_PATH,
     CSHARP_STEP_IMPORT_FIXTURE_PATH,
     CSHARP_STEP_SCALE_FIXTURE_PATH,
@@ -19,6 +20,7 @@ from tests.helpers import (
 
 PUBLIC_FIXTURE_PATHS = (
     ADDITION_FIXTURE_PATH,
+    BREP_POINTS_FIXTURE_PATH,
     CSHARP_ADDITION_FIXTURE_PATH,
     CSHARP_STEP_IMPORT_FIXTURE_PATH,
     CSHARP_STEP_SCALE_FIXTURE_PATH,

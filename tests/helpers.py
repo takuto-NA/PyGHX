@@ -19,6 +19,7 @@ IMPORT_MODEL_FIXTURE_PATH = FIXTURES_DIRECTORY / "import_model.ghx"
 IMPORT_TWO_MODELS_FIXTURE_PATH = FIXTURES_DIRECTORY / "import_two_models.ghx"
 CSHARP_STEP_IMPORT_FIXTURE_PATH = FIXTURES_DIRECTORY / "csharp_step_import.ghx"
 CSHARP_STEP_SCALE_FIXTURE_PATH = FIXTURES_DIRECTORY / "csharp_step_scale.ghx"
+BREP_POINTS_FIXTURE_PATH = FIXTURES_DIRECTORY / "brep_points.ghx"
 MALFORMED_FIXTURE_PATH = FIXTURES_DIRECTORY / "malformed.ghx"
 UNKNOWN_STRUCTURE_FIXTURE_PATH = FIXTURES_DIRECTORY / "unknown_structure.ghx"
 DEFAULT_RHINO_COMPUTE_URL = "http://localhost:5000/"
@@ -53,6 +54,31 @@ def import_two_model_step_paths() -> tuple[Path, Path] | None:
         return None
 
     return target_step_path, obstacle_step_path
+
+
+def brep_points_step_path() -> Path | None:
+    """Return an optional STEP/3DM file path for Brep Points integration tests."""
+    return _resolve_existing_file_path_from_environment("PYGHX_BREP_STEP_PATH")
+
+
+def brep_points_sample_point_coordinates() -> tuple[float, float, float] | None:
+    """Return optional X,Y,Z coordinates for Brep Points integration tests."""
+    raw_coordinates = os.environ.get("PYGHX_BREP_SAMPLE_POINT")
+    if not raw_coordinates:
+        return None
+
+    coordinate_parts = [part.strip() for part in raw_coordinates.split(",")]
+    if len(coordinate_parts) != 3:
+        return None
+
+    try:
+        return (
+            float(coordinate_parts[0]),
+            float(coordinate_parts[1]),
+            float(coordinate_parts[2]),
+        )
+    except ValueError:
+        return None
 
 
 def run_pyghx_cli(arguments: list[str]) -> subprocess.CompletedProcess[str]:

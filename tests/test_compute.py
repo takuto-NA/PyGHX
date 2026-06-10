@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from pyghx.compute import (
@@ -14,12 +16,15 @@ from pyghx.compute import (
 from pyghx.inspect import inspect_document
 from tests.helpers import (
     ADDITION_FIXTURE_PATH,
+    BREP_POINTS_FIXTURE_PATH,
     CSHARP_STEP_IMPORT_FIXTURE_PATH,
     CSHARP_STEP_SCALE_FIXTURE_PATH,
     DEFAULT_RHINO_COMPUTE_URL,
     IMPORT_MODEL_FIXTURE_PATH,
     IMPORT_TWO_MODELS_FIXTURE_PATH,
     VARIATION_FIXTURE_PATH,
+    brep_points_sample_point_coordinates,
+    brep_points_step_path,
     import_model_step_path,
     import_two_model_step_paths,
     is_rhino_compute_available,
@@ -189,7 +194,7 @@ def test_rhino_compute_csharp_step_import_fixture() -> None:
         "RhinoCompute failed for csharp_step_import fixture: "
         + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
     )
-    geometry_piece_count_output = compute_result.outputs.get("c_script")
+    geometry_piece_count_output = compute_result.outputs.get("geometry_piece_count")
     assert geometry_piece_count_output
     assert geometry_piece_count_output[0] >= 1
 
@@ -223,7 +228,7 @@ def test_rhino_compute_csharp_step_scale_fixture() -> None:
         "RhinoCompute failed for csharp_step_scale fixture: "
         + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
     )
-    scaled_output = compute_result.outputs.get("c_script")
+    scaled_output = compute_result.outputs.get("scaled_geometry_piece_count")
     assert scaled_output
     assert scaled_output[0] == 5.0
 
@@ -261,8 +266,54 @@ def test_rhino_compute_import_two_models_fixture() -> None:
         "RhinoCompute failed for import_two_models fixture: "
         + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
     )
-    assert len(compute_result.outputs.get("import_target", [])) >= 1
-    assert len(compute_result.outputs.get("import_obstacle", [])) >= 1
+    assert len(compute_result.outputs.get("target_geometry", [])) >= 1
+    assert len(compute_result.outputs.get("obstacle_geometry", [])) >= 1
+
+
+@pytest.mark.integration
+def test_rhino_compute_brep_points_fixture() -> None:
+    step_file_path = brep_points_step_path()
+    sample_point_coordinates = brep_points_sample_point_coordinates()
+    if step_file_path is None:
+        pytest.skip("PYGHX_BREP_STEP_PATH is not set to an existing STEP/3DM file.")
+    if sample_point_coordinates is None:
+        pytest.skip("PYGHX_BREP_SAMPLE_POINT is not set to X,Y,Z coordinates.")
+
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    compute_result = evaluate_document(
+        BREP_POINTS_FIXTURE_PATH,
+        input_values=[
+            ComputeInputValue(
+                nickname="Get File Path",
+                value=str(step_file_path),
+                kind="file_path",
+            ),
+            ComputeInputValue(
+                nickname="Get Point",
+                value=sample_point_coordinates,
+                kind="point",
+            ),
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True, (
+        "RhinoCompute failed for brep_points fixture: "
+        + "; ".join(diagnostic["message"] for diagnostic in compute_result.diagnostics)
+    )
+
+    inside_output = compute_result.outputs.get("inside")
+    distance_output = compute_result.outputs.get("distance")
+    point_output = compute_result.outputs.get("point")
+    normal_output = compute_result.outputs.get("normal")
+    assert inside_output is not None
+    assert distance_output is not None
+    assert point_output is not None
+    assert normal_output is not None
+    assert isinstance(distance_output[0], (int, float))
+    inside_value = inside_output[0]
+    assert isinstance(inside_value, (bool, int)) or inside_value in {"true", "false", "True", "False"}
 
 
 @pytest.mark.integration
