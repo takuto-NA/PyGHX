@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +16,7 @@ from pyghx.script_edit import (
     repair_duplicate_contextual_input_nicknames,
     set_script_source_text,
 )
+from pyghx.script_graph_edit import add_csharp_number_input, remove_csharp_input, rename_csharp_input
 from pyghx.validate import validate_document
 from tests.helpers import (
     CSHARP_ADDITION_FIXTURE_PATH,
@@ -190,3 +192,137 @@ def test_e2e_generate_csharp_addition_via_cli(tmp_path: Path) -> None:
     payload = parse_cli_json(compute_process.stdout)
     assert payload["success"] is True
     assert payload["numeric_summary"] == 5.0
+
+
+@pytest.mark.integration
+def test_e2e_add_csharp_number_input_then_compute(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    edited_path = tmp_path / "three_input_csharp_addition.ghx"
+    generate_csharp_addition_document(edited_path)
+    add_csharp_number_input(edited_path, contextual_nickname="Z", variable_name="z")
+
+    updated_source_text = read_script_source_text(edited_path).replace(
+        "firstNumber + secondNumber",
+        "firstNumber + secondNumber + Convert.ToDouble(z)",
+    )
+    set_script_source_text(edited_path, updated_source_text)
+    assert validate_document(edited_path).valid is True
+
+    compute_result = evaluate_document(
+        edited_path,
+        input_values=[
+            ComputeInputValue(nickname="X", value=2),
+            ComputeInputValue(nickname="Y", value=3),
+            ComputeInputValue(nickname="Z", value=4),
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True
+    assert extract_numeric_result(compute_result.outputs) == 9.0
+
+
+@pytest.mark.integration
+def test_e2e_rename_csharp_input_then_compute(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    edited_path = tmp_path / "renamed_input_csharp_addition.ghx"
+    shutil.copy(CSHARP_ADDITION_FIXTURE_PATH, edited_path)
+    rename_csharp_input(
+        edited_path,
+        contextual_nickname="X",
+        new_contextual_nickname="Length",
+        new_variable_name="length",
+    )
+    renamed_source_text = read_script_source_text(edited_path).replace(
+        "Convert.ToDouble(x)",
+        "Convert.ToDouble(length)",
+    )
+    set_script_source_text(edited_path, renamed_source_text)
+    assert validate_document(edited_path).valid is True
+
+    compute_result = evaluate_document(
+        edited_path,
+        input_values=[
+            ComputeInputValue(nickname="Length", value=2),
+            ComputeInputValue(nickname="Y", value=3),
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True
+    assert extract_numeric_result(compute_result.outputs) == 5.0
+
+
+@pytest.mark.integration
+def test_e2e_remove_csharp_input_then_compute(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    edited_path = tmp_path / "removed_input_csharp_addition.ghx"
+    shutil.copy(CSHARP_ADDITION_FIXTURE_PATH, edited_path)
+    add_csharp_number_input(edited_path, contextual_nickname="Z", variable_name="z")
+    remove_csharp_input(edited_path, variable_name="z")
+    assert validate_document(edited_path).valid is True
+
+    compute_result = evaluate_document(
+        edited_path,
+        input_values=[
+            ComputeInputValue(nickname="X", value=2),
+            ComputeInputValue(nickname="Y", value=3),
+        ],
+        compute_url=DEFAULT_RHINO_COMPUTE_URL,
+    )
+    assert compute_result.success is True
+    assert extract_numeric_result(compute_result.outputs) == 5.0
+
+
+@pytest.mark.integration
+def test_e2e_add_csharp_number_input_via_cli_then_compute(tmp_path: Path) -> None:
+    if not is_rhino_compute_available():
+        pytest.skip("RhinoCompute is not available at http://localhost:5000/")
+
+    generated_path = tmp_path / "cli_three_input_csharp_addition.ghx"
+    generate_process = run_pyghx_cli(
+        ["generate-csharp-addition", "--output", str(generated_path)]
+    )
+    assert generate_process.returncode == 0
+
+    add_process = run_pyghx_cli(
+        [
+            "add-csharp-number-input",
+            str(generated_path),
+            "--name",
+            "Z",
+            "--variable-name",
+            "z",
+        ]
+    )
+    assert add_process.returncode == 0
+
+    updated_source_text = read_script_source_text(generated_path).replace(
+        "firstNumber + secondNumber",
+        "firstNumber + secondNumber + Convert.ToDouble(z)",
+    )
+    set_script_source_text(generated_path, updated_source_text)
+
+    compute_process = run_pyghx_cli(
+        [
+            "compute",
+            str(generated_path),
+            "--number",
+            "X=2",
+            "--number",
+            "Y=3",
+            "--number",
+            "Z=4",
+            "--url",
+            DEFAULT_RHINO_COMPUTE_URL,
+            "--json",
+        ]
+    )
+    assert compute_process.returncode == 0
+    payload = parse_cli_json(compute_process.stdout)
+    assert payload["success"] is True
+    assert payload["numeric_summary"] == 9.0

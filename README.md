@@ -29,11 +29,27 @@ uv run pyghx compute tests/fixtures/csharp_addition.ghx --number X=2 --number Y=
 uv run pyghx set-script-source generated_csharp_addition.ghx --source-file my_script.cs
 uv run pyghx repair-contextual-inputs tests/fixtures/csharp_addition_raw.ghx --nickname 6ff49b4e-be51-4113-a28d-f99ca930859d=X --nickname 19e82177-c780-4c7e-995c-4da6b1579038=Y
 uv run pyghx remove-context-bake tests/fixtures/csharp_addition_raw.ghx c5bbe4a9-4b2c-4253-9a8c-03da1002ae74
+uv run pyghx add-csharp-number-input generated_csharp_addition.ghx --name Z --variable-name z
+uv run pyghx rename-csharp-input generated_csharp_addition.ghx --name X --new-name Length --variable-name length
+uv run pyghx remove-csharp-input generated_csharp_addition.ghx --variable-name z
 ```
 
 `validate` reports duplicate contextual input/output names before RhinoCompute execution. `inspect --json` includes a `script_components` field with decoded source text and script parameter metadata.
 
-`validate` checks GHX structure and RhinoCompute contracts only. It does not analyze or sandbox C# Script source code.
+AI agent edit loop for C# Script GHX:
+
+```powershell
+uv run pyghx generate-csharp-addition --output agent_graph.ghx
+uv run pyghx add-csharp-number-input agent_graph.ghx --name Z --variable-name z
+uv run pyghx inspect --json agent_graph.ghx
+uv run pyghx validate agent_graph.ghx
+uv run pyghx set-script-source agent_graph.ghx --source-file my_script.cs
+uv run pyghx compute agent_graph.ghx --number X=2 --number Y=3 --number Z=4 --json
+```
+
+`validate` checks GHX structure and RhinoCompute contracts only. It does not analyze or sandbox C# Script source code. Graph-edit diagnostics include `run_script_signature_mismatch`, `script_input_not_wired`, `script_input_missing_contextual_source`, and `script_parameter_duplicate_name`.
+
+Renaming or adding C# Script inputs updates `RunScript` signatures and GHX wiring automatically. C# source bodies are not rewritten; update them with `set-script-source` when variable names change inside the script body.
 
 ## Reference patterns (local, private)
 

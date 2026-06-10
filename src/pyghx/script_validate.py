@@ -12,7 +12,11 @@ from pyghx.script_component import (
     decode_script_source_text,
     extract_script_components,
 )
-from pyghx.script_edit import build_run_script_signature_warning
+from pyghx.script_source import (
+    ScriptSourceError,
+    build_run_script_signature_warning,
+    parse_run_script_signature,
+)
 
 
 def build_script_validation_diagnostics(source_path: str) -> list[dict[str, str]]:
@@ -135,6 +139,22 @@ def _build_script_component_diagnostics(source_path: str) -> list[dict[str, str]
                     "message": f"C# Script {script_label!r}: {signature_warning}",
                 }
             )
+        else:
+            diagnostics.extend(
+                _build_run_script_parameter_diagnostics(
+                    script_label=script_label,
+                    decoded_source_text=decoded_source_text,
+                    script_summary=script_summary,
+                )
+            )
+
+        diagnostics.extend(
+            _build_script_input_wiring_diagnostics(
+                script_label=script_label,
+                script_summary=script_summary,
+                document=document,
+            )
+        )
 
         if script_summary.outputs and not script_summary.context_bake_reachable_output_nicknames:
             diagnostics.append(
@@ -144,6 +164,93 @@ def _build_script_component_diagnostics(source_path: str) -> list[dict[str, str]
                     "message": (
                         f"C# Script {script_label!r} has outputs that are not wired to "
                         "any Context Bake component."
+                    ),
+                }
+            )
+    return diagnostics
+
+
+def _build_run_script_parameter_diagnostics(
+    script_label: str,
+    decoded_source_text: str,
+    script_summary,
+) -> list[dict[str, str]]:
+    diagnostics: list[dict[str, str]] = []
+    try:
+        run_script_input_names, _run_script_output_names = parse_run_script_signature(
+            decoded_source_text
+        )
+    except ScriptSourceError:
+        return diagnostics
+
+    script_input_names = tuple(script_input.name for script_input in script_summary.inputs)
+    if run_script_input_names != script_input_names:
+        diagnostics.append(
+            {
+                "level": "error",
+                "code": "run_script_signature_mismatch",
+                "message": (
+                    f"C# Script {script_label!r} RunScript input variables "
+                    f"{list(run_script_input_names)!r} do not match ParameterData inputs "
+                    f"{list(script_input_names)!r}."
+                ),
+            }
+        )
+
+    duplicate_script_input_names = _find_duplicate_values(list(script_input_names))
+    for duplicate_script_input_name in duplicate_script_input_names:
+        diagnostics.append(
+            {
+                "level": "error",
+                "code": "script_parameter_duplicate_name",
+                "message": (
+                    f"C# Script {script_label!r} has duplicate input parameter name "
+                    f"{duplicate_script_input_name!r}."
+                ),
+            }
+        )
+    return diagnostics
+
+
+def _build_script_input_wiring_diagnostics(
+    script_label: str,
+    script_summary,
+    document,
+) -> list[dict[str, str]]:
+    diagnostics: list[dict[str, str]] = []
+    contextual_component_names = set(CONTEXTUAL_INPUT_COMPONENT_NAMES)
+    component_name_by_instance_guid = {
+        definition_object.instance_guid: definition_object.component_name
+        for definition_object in document.objects
+        if definition_object.instance_guid is not None
+    }
+
+    for script_input in script_summary.inputs:
+        if not script_input.source_instance_guids:
+            diagnostics.append(
+                {
+                    "level": "error",
+                    "code": "script_input_not_wired",
+                    "message": (
+                        f"C# Script {script_label!r} input {script_input.name!r} "
+                        "is not wired to any contextual source."
+                    ),
+                }
+            )
+            continue
+
+        for source_instance_guid in script_input.source_instance_guids:
+            source_component_name = component_name_by_instance_guid.get(source_instance_guid)
+            if source_component_name in contextual_component_names:
+                continue
+            diagnostics.append(
+                {
+                    "level": "error",
+                    "code": "script_input_missing_contextual_source",
+                    "message": (
+                        f"C# Script {script_label!r} input {script_input.name!r} "
+                        f"is wired to {source_instance_guid!r}, which is not a supported "
+                        "contextual input component."
                     ),
                 }
             )

@@ -213,3 +213,101 @@ def test_cli_repair_raw_csharp_fixture_via_cli(tmp_path: Path) -> None:
 
     repaired_validate_process = run_pyghx_cli(["validate", str(repaired_path)])
     assert repaired_validate_process.returncode == 0
+
+
+def test_cli_add_csharp_number_input_reports_duplicate_variable_name(tmp_path: Path) -> None:
+    output_path = tmp_path / "duplicate_variable_name.ghx"
+    shutil.copy(CSHARP_ADDITION_FIXTURE_PATH, output_path)
+
+    duplicate_add_process = run_pyghx_cli(
+        [
+            "add-csharp-number-input",
+            str(output_path),
+            "--name",
+            "Z",
+            "--variable-name",
+            "x",
+        ]
+    )
+    assert duplicate_add_process.returncode == 1
+    assert "already exists" in duplicate_add_process.stderr
+
+
+def test_cli_add_csharp_number_input_round_trip(tmp_path: Path) -> None:
+    output_path = tmp_path / "cli_three_input_addition.ghx"
+    shutil.copy(CSHARP_ADDITION_FIXTURE_PATH, output_path)
+
+    add_process = run_pyghx_cli(
+        [
+            "add-csharp-number-input",
+            str(output_path),
+            "--name",
+            "Z",
+            "--variable-name",
+            "z",
+        ]
+    )
+    assert add_process.returncode == 0
+
+    inspect_process = run_pyghx_cli(["inspect", str(output_path), "--json"])
+    assert inspect_process.returncode == 0
+    summary = parse_cli_json(inspect_process.stdout)
+    contextual_nicknames = {
+        contextual_input["nickname"] for contextual_input in summary["contextual_inputs"]
+    }
+    assert contextual_nicknames == {"X", "Y", "Z"}
+
+    validate_process = run_pyghx_cli(["validate", str(output_path)])
+    assert validate_process.returncode == 0
+
+
+def test_cli_rename_and_remove_csharp_input_round_trip(tmp_path: Path) -> None:
+    output_path = tmp_path / "cli_renamed_input_addition.ghx"
+    shutil.copy(CSHARP_ADDITION_FIXTURE_PATH, output_path)
+
+    rename_process = run_pyghx_cli(
+        [
+            "rename-csharp-input",
+            str(output_path),
+            "--name",
+            "X",
+            "--new-name",
+            "Length",
+            "--variable-name",
+            "length",
+        ]
+    )
+    assert rename_process.returncode == 0
+
+    inspect_process = run_pyghx_cli(["inspect", str(output_path), "--json"])
+    assert inspect_process.returncode == 0
+    summary = parse_cli_json(inspect_process.stdout)
+    contextual_nicknames = {
+        contextual_input["nickname"] for contextual_input in summary["contextual_inputs"]
+    }
+    assert contextual_nicknames == {"Length", "Y"}
+
+    add_process = run_pyghx_cli(
+        [
+            "add-csharp-number-input",
+            str(output_path),
+            "--name",
+            "Z",
+            "--variable-name",
+            "z",
+        ]
+    )
+    assert add_process.returncode == 0
+
+    remove_process = run_pyghx_cli(
+        [
+            "remove-csharp-input",
+            str(output_path),
+            "--variable-name",
+            "z",
+        ]
+    )
+    assert remove_process.returncode == 0
+
+    validate_process = run_pyghx_cli(["validate", str(output_path)])
+    assert validate_process.returncode == 0

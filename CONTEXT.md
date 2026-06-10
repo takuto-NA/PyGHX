@@ -74,4 +74,12 @@ C# Script の入出力パラメータ（例: `x`, `y`, `a`, `out`）。`inspect 
 
 ## script validation scope
 
-`validate` は GHX 構造と RhinoCompute 契約（同名パラメータ、base64、Context Bake 欠落など）を検査する。C# Script のコード安全性や任意コード実行の可否は保証しない。
+`validate` は GHX 構造と RhinoCompute 契約（同名パラメータ、base64、Context Bake 欠落、`RunScript` 署名不一致、未配線入力など）を検査する。C# Script のコード安全性や任意コード実行の可否は保証しない。
+
+## script graph edit
+
+C# Script グラフの構造編集。`Get Number` の追加・削除・改名、C# Script `InputParam` の同期、`RunScript` 署名の更新、Source 配線をまとめて扱う。MVP では `Get Number` のみ対応。
+
+## editable C# Script recipe
+
+AI エージェントが `inspect` → `add-csharp-number-input` / `set-script-source` → `validate` → `compute` を繰り返して育てる C# Script ベースの RhinoCompute 対応 GHX レシピ。

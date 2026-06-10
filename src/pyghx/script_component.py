@@ -35,6 +35,8 @@ class ScriptParameterSummary:
     type_hint_id: str | None
     script_param_access: int | None
     source_instance_guids: tuple[str, ...]
+    source_count: int | None
+    chunk_index: int | None
     is_standard_output: bool
 
 
@@ -290,6 +292,8 @@ def _parse_script_parameter_element(
         type_hint_id=_find_item_text(items_element, "TypeHintID"),
         script_param_access=_parse_optional_int(_find_item_text(items_element, "ScriptParamAccess")),
         source_instance_guids=source_guids,
+        source_count=_parse_optional_int(_find_item_text(items_element, "SourceCount")),
+        chunk_index=_parse_optional_int(parameter_element.get("index")),
         is_standard_output=parameter_name == STANDARD_OUTPUT_PARAM_NAME,
     )
 
@@ -322,6 +326,8 @@ def _script_parameter_to_dict(script_parameter: ScriptParameterSummary) -> dict[
         "type_hint_id": script_parameter.type_hint_id,
         "script_param_access": script_parameter.script_param_access,
         "source_instance_guids": list(script_parameter.source_instance_guids),
+        "source_count": script_parameter.source_count,
+        "chunk_index": script_parameter.chunk_index,
         "is_standard_output": script_parameter.is_standard_output,
     }
 

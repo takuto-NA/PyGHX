@@ -34,3 +34,8 @@ def test_csharp_addition_fixture_extracts_script_component() -> None:
     assert input_nicknames == {"x", "y"}
     assert output_nicknames == {"out", "a"}
     assert script_summary.context_bake_reachable_output_nicknames == ("a",)
+
+    script_input_x = script_summary.inputs[0]
+    assert script_input_x.source_count == 1
+    assert script_input_x.chunk_index == 0
+    assert script_input_x.source_instance_guids == ("6ff49b4e-be51-4113-a28d-f99ca930859d",)

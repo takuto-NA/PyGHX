@@ -22,6 +22,12 @@ from pyghx.script_edit import (
     repair_duplicate_contextual_input_nicknames,
     set_script_source_text,
 )
+from pyghx.script_graph_edit import (
+    ScriptGraphEditError,
+    add_csharp_number_input,
+    remove_csharp_input,
+    rename_csharp_input,
+)
 from pyghx.inspect import inspect_document
 from pyghx.reference import extract_patterns, generate_from_pattern, load_pattern_catalog
 from pyghx.reference.catalog import find_pattern_entry
@@ -177,6 +183,66 @@ def _build_parser() -> argparse.ArgumentParser:
     remove_context_bake_parser.add_argument("ghx_path", type=Path)
     remove_context_bake_parser.add_argument("instance_guid")
 
+    add_csharp_number_input_parser = subparsers.add_parser(
+        "add-csharp-number-input",
+        help="Add one Get Number input wired to a C# Script InputParam.",
+    )
+    add_csharp_number_input_parser.add_argument("ghx_path", type=Path)
+    add_csharp_number_input_parser.add_argument(
+        "--name",
+        required=True,
+        help="RhinoCompute contextual input nickname (for example Z).",
+    )
+    add_csharp_number_input_parser.add_argument(
+        "--variable-name",
+        required=True,
+        help="C# Script input variable name (for example z).",
+    )
+    add_csharp_number_input_parser.add_argument(
+        "--instance-guid",
+        help="Target one C# Script component when multiple are present.",
+    )
+
+    remove_csharp_input_parser = subparsers.add_parser(
+        "remove-csharp-input",
+        help="Remove one C# Script input and its wired Get Number component.",
+    )
+    remove_csharp_input_parser.add_argument("ghx_path", type=Path)
+    remove_csharp_input_parser.add_argument(
+        "--variable-name",
+        required=True,
+        help="C# Script input variable name to remove.",
+    )
+    remove_csharp_input_parser.add_argument(
+        "--instance-guid",
+        help="Target one C# Script component when multiple are present.",
+    )
+
+    rename_csharp_input_parser = subparsers.add_parser(
+        "rename-csharp-input",
+        help="Rename one wired Get Number nickname and C# Script input variable.",
+    )
+    rename_csharp_input_parser.add_argument("ghx_path", type=Path)
+    rename_csharp_input_parser.add_argument(
+        "--name",
+        required=True,
+        help="Current contextual input nickname.",
+    )
+    rename_csharp_input_parser.add_argument(
+        "--new-name",
+        required=True,
+        help="New contextual input nickname.",
+    )
+    rename_csharp_input_parser.add_argument(
+        "--variable-name",
+        required=True,
+        help="New C# Script input variable name.",
+    )
+    rename_csharp_input_parser.add_argument(
+        "--instance-guid",
+        help="Target one C# Script component when multiple are present.",
+    )
+
     extract_patterns_parser = subparsers.add_parser(
         "extract-patterns",
         help="Extract reusable patterns from a reference GHX file.",
@@ -249,6 +315,12 @@ def main(argv: list[str] | None = None) -> int:
         return _run_get_script_source(arguments)
     if arguments.command == "remove-context-bake":
         return _run_remove_context_bake(arguments)
+    if arguments.command == "add-csharp-number-input":
+        return _run_add_csharp_number_input(arguments)
+    if arguments.command == "remove-csharp-input":
+        return _run_remove_csharp_input(arguments)
+    if arguments.command == "rename-csharp-input":
+        return _run_rename_csharp_input(arguments)
     if arguments.command == "extract-patterns":
         return _run_extract_patterns(arguments)
     if arguments.command == "list-patterns":
@@ -375,6 +447,51 @@ def _run_remove_context_bake(arguments: argparse.Namespace) -> int:
         arguments.ghx_path,
         instance_guid=arguments.instance_guid,
     )
+    print(str(output_path))
+    return 0
+
+
+def _run_add_csharp_number_input(arguments: argparse.Namespace) -> int:
+    try:
+        output_path = add_csharp_number_input(
+            arguments.ghx_path,
+            contextual_nickname=arguments.name,
+            variable_name=arguments.variable_name,
+            instance_guid=arguments.instance_guid,
+        )
+    except ScriptGraphEditError as edit_error:
+        print(str(edit_error), file=sys.stderr)
+        return 1
+    print(str(output_path))
+    return 0
+
+
+def _run_remove_csharp_input(arguments: argparse.Namespace) -> int:
+    try:
+        output_path = remove_csharp_input(
+            arguments.ghx_path,
+            variable_name=arguments.variable_name,
+            instance_guid=arguments.instance_guid,
+        )
+    except ScriptGraphEditError as edit_error:
+        print(str(edit_error), file=sys.stderr)
+        return 1
+    print(str(output_path))
+    return 0
+
+
+def _run_rename_csharp_input(arguments: argparse.Namespace) -> int:
+    try:
+        output_path = rename_csharp_input(
+            arguments.ghx_path,
+            contextual_nickname=arguments.name,
+            new_contextual_nickname=arguments.new_name,
+            new_variable_name=arguments.variable_name,
+            instance_guid=arguments.instance_guid,
+        )
+    except ScriptGraphEditError as edit_error:
+        print(str(edit_error), file=sys.stderr)
+        return 1
     print(str(output_path))
     return 0
 
