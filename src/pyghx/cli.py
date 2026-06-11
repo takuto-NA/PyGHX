@@ -32,6 +32,7 @@ from pyghx.script_graph_edit import (
 from pyghx.inspect import inspect_document
 from pyghx.reference import extract_patterns, generate_from_pattern, load_pattern_catalog
 from pyghx.reference.catalog import find_pattern_entry
+from pyghx.gradient_transform import GradientTransformError, transform_penalty_graph_for_gradient
 from pyghx.validate import validate_document
 
 
@@ -305,6 +306,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Override the DefinitionProperties Name item.",
     )
 
+    add_gradient_outputs_parser = subparsers.add_parser(
+        "add-gradient-outputs",
+        help="Derive one GHX that returns penalty and Gradient in a single RhinoCompute solve.",
+    )
+    add_gradient_outputs_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Source penalty GHX path.",
+    )
+    add_gradient_outputs_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Derived gradient GHX output path.",
+    )
+
     return parser
 
 
@@ -351,6 +369,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_inspect_pattern(arguments)
     if arguments.command == "generate-from-pattern":
         return _run_generate_from_pattern(arguments)
+    if arguments.command == "add-gradient-outputs":
+        return _run_add_gradient_outputs(arguments)
 
     parser.error(f"Unknown command: {arguments.command}")
     return 2
@@ -588,6 +608,20 @@ def _run_generate_from_pattern(arguments: argparse.Namespace) -> int:
         document_name=arguments.document_name,
     )
     print(str(output_path))
+    return 0
+
+
+def _run_add_gradient_outputs(arguments: argparse.Namespace) -> int:
+    try:
+        transform_result = transform_penalty_graph_for_gradient(
+            arguments.input,
+            arguments.output,
+        )
+    except GradientTransformError as transform_error:
+        print(str(transform_error), file=sys.stderr)
+        return 1
+
+    print(str(transform_result.output_path))
     return 0
 
 

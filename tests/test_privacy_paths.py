@@ -13,6 +13,7 @@ TRACKED_SCAN_PATHS = (
     Path("tests/fixtures"),
     Path("src"),
     Path("scripts"),
+    Path("docs"),
     Path("README.md"),
 )
 

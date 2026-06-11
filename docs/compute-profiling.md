@@ -66,7 +66,7 @@ uv run pyghx compute path\to\definition.ghx `
 |-------|------|
 | End-to-end (`uv run pyghx compute`) | 〜145 ms |
 
-### Geometry-heavy graph (`cab_be_assembled_points.ghx`, 〜660 KB)
+### Geometry-heavy graph (`path\to\definition.ghx`, 〜660 KB)
 
 | Phase | Warm |
 |-------|------|
