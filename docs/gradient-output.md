@@ -153,12 +153,32 @@ uv run pyghx descend-gradient path\to\definition_gradient.ghx `
 
 The gradient GHX still exists for inspecting in-graph vectorized behavior, but its `penalty` can differ from the original scalar GHX because Grasshopper list/tree data matching changes the graph evaluation. Do not use the derived GHX `penalty` as the objective for optimization unless a separate identity check confirms it matches the original scalar penalty for the target graph.
 
+### L-BFGS-B optimization
+
+Use `lbfgs-gradient` when the steepest descent line search takes many accepted steps. It uses the same evaluator contract as `descend-gradient`, but passes `penalty` and projected `Gradient` to SciPy's L-BFGS-B optimizer. Fixed variables are removed from the optimizer vector, so `--fixed Y=-1` keeps `Y` unchanged.
+
+```powershell
+uv run pyghx lbfgs-gradient path\to\definition_gradient.ghx `
+  --source-ghx path\to\definition.ghx `
+  --fixed Y=-1 `
+  --finite-difference-step 0.01 `
+  --max-iterations 40 `
+  --gradient-tolerance 0.001 `
+  --url http://localhost:5000/ `
+  --json
+```
+
+Exact `--source-ghx` L-BFGS-B still costs eight RhinoCompute calls per function/gradient evaluation, but it can require far fewer optimizer iterations than steepest descent because it approximates curvature from recent gradients. Tune `--history-size` and `--maximum-line-search-steps` only after comparing recorded `evaluation_count` and `rhino_compute_call_count`.
+
 Stop reasons:
 
 - `converged`: projected Gradient norm reached `--gradient-tolerance`
+- `penalty_tolerance_reached`: penalty reached `--tolerance`
 - `max_iterations_reached`: iteration budget exhausted
 - `step_size_too_small`: no acceptable Armijo step remained
 - `zero_projected_gradient`: projected search direction became zero
+- `optimizer_converged`: L-BFGS-B stopped successfully before local gradient classification matched this wrapper's thresholds
+- `optimizer_stopped`: L-BFGS-B stopped without satisfying the wrapper thresholds
 
 Each run records metrics in the JSON output under `run_metrics`:
 

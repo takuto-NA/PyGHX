@@ -40,6 +40,9 @@ DEFAULT_FINITE_DIFFERENCE_STEP = 0.01
 GRADIENT_COMPONENT_COUNT = 7
 ZERO_NORM_TOLERANCE = 1e-18
 DEFAULT_DESCENT_RECORD_PATH = Path(".pyghx") / "descent_latest.json"
+DEFAULT_LBFGS_HISTORY_SIZE = 10
+DEFAULT_LBFGS_MAXIMUM_LINE_SEARCH_STEPS = 20
+DEFAULT_LBFGS_RECORD_PATH = Path(".pyghx") / "lbfgs_latest.json"
 
 
 class GradientDescentError(Exception):
@@ -151,6 +154,51 @@ class GradientDescentResult:
                 }
                 for accepted_iteration in self.accepted_iterations
             ],
+        }
+
+
+@dataclass(frozen=True)
+class LbfgsConfig:
+    """Configuration for one projected L-BFGS-B run."""
+
+    initial_input_values: dict[str, float] = field(
+        default_factory=lambda: dict(DEFAULT_INITIAL_INPUT_VALUES)
+    )
+    fixed_variable_values: dict[str, float] = field(
+        default_factory=lambda: dict(DEFAULT_FIXED_VARIABLE_VALUES)
+    )
+    penalty_tolerance: float = DEFAULT_PENALTY_TOLERANCE
+    gradient_tolerance: float = DEFAULT_GRADIENT_TOLERANCE
+    maximum_iteration_count: int = DEFAULT_MAXIMUM_ITERATION_COUNT
+    history_size: int = DEFAULT_LBFGS_HISTORY_SIZE
+    maximum_line_search_steps: int = DEFAULT_LBFGS_MAXIMUM_LINE_SEARCH_STEPS
+
+
+@dataclass(frozen=True)
+class LbfgsResult:
+    """Final result from one projected L-BFGS-B run."""
+
+    final_input_values: dict[str, float]
+    final_penalty: float
+    final_gradient_values: list[float]
+    final_projected_gradient_norm: float
+    stop_reason: str
+    optimizer_message: str
+    optimizer_iteration_count: int
+    optimizer_function_evaluation_count: int
+    run_metrics: GradientDescentRunMetrics
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "final_input_values": dict(self.final_input_values),
+            "final_penalty": self.final_penalty,
+            "final_gradient_values": list(self.final_gradient_values),
+            "final_projected_gradient_norm": self.final_projected_gradient_norm,
+            "stop_reason": self.stop_reason,
+            "optimizer_message": self.optimizer_message,
+            "optimizer_iteration_count": self.optimizer_iteration_count,
+            "optimizer_function_evaluation_count": self.optimizer_function_evaluation_count,
+            "run_metrics": self.run_metrics.to_dict(),
         }
 
 
@@ -534,6 +582,110 @@ def run_projected_gradient_descent(
     )
 
 
+def run_projected_lbfgs(
+    evaluator: PenaltyGradientEvaluatorProtocol,
+    config: LbfgsConfig,
+) -> LbfgsResult:
+    """Run projected L-BFGS-B with fixed variables removed from the optimizer vector."""
+    from scipy.optimize import minimize
+
+    run_started_at = time.perf_counter()
+    counting_evaluator = _wrap_counting_evaluator(evaluator)
+    initial_input_values = _apply_fixed_variable_values(
+        config.initial_input_values,
+        config.fixed_variable_values,
+    )
+    free_variable_nicknames = _build_free_variable_nicknames(config.fixed_variable_values)
+    initial_free_values = _pack_free_variable_values(
+        input_values=initial_input_values,
+        free_variable_nicknames=free_variable_nicknames,
+    )
+    initial_penalty_value: float | None = None
+
+    def objective_and_gradient(free_values: list[float]) -> tuple[float, list[float]]:
+        nonlocal initial_penalty_value
+        trial_input_values = _unpack_free_variable_values(
+            free_values=free_values,
+            template_input_values=initial_input_values,
+            fixed_variable_values=config.fixed_variable_values,
+            free_variable_nicknames=free_variable_nicknames,
+        )
+        penalty_value, gradient_values = counting_evaluator.evaluate(trial_input_values)
+        if initial_penalty_value is None:
+            initial_penalty_value = penalty_value
+        free_gradient_values = [
+            gradient_values[CONTEXTUAL_INPUT_NICKNAMES.index(nickname)]
+            for nickname in free_variable_nicknames
+        ]
+        return penalty_value, free_gradient_values
+
+    optimizer_result = minimize(
+        objective_and_gradient,
+        initial_free_values,
+        method="L-BFGS-B",
+        jac=True,
+        options={
+            "maxiter": config.maximum_iteration_count,
+            "gtol": config.gradient_tolerance,
+            "ftol": config.penalty_tolerance,
+            "maxcor": config.history_size,
+            "maxls": config.maximum_line_search_steps,
+        },
+    )
+    final_input_values = _unpack_free_variable_values(
+        free_values=list(optimizer_result.x),
+        template_input_values=initial_input_values,
+        fixed_variable_values=config.fixed_variable_values,
+        free_variable_nicknames=free_variable_nicknames,
+    )
+    final_penalty, final_gradient_values = counting_evaluator.evaluate(final_input_values)
+    final_projected_search_gradient = _build_projected_search_gradient(
+        gradient_values=final_gradient_values,
+        fixed_variable_values=config.fixed_variable_values,
+    )
+    final_projected_gradient_norm = math.sqrt(
+        _squared_euclidean_norm(final_projected_search_gradient)
+    )
+    run_metrics = GradientDescentRunMetrics(
+        evaluation_count=counting_evaluator.evaluation_count,
+        rhino_compute_call_count=counting_evaluator.rhino_compute_call_count,
+        penalty_only_evaluation_count=counting_evaluator.penalty_only_evaluation_count,
+        penalty_only_rhino_compute_call_count=(
+            counting_evaluator.penalty_only_rhino_compute_call_count
+        ),
+        accepted_iteration_count=int(optimizer_result.nit),
+        rejected_line_search_trial_count=0,
+        total_wall_clock_milliseconds=_elapsed_milliseconds_since(run_started_at),
+        total_evaluate_milliseconds=(
+            counting_evaluator.evaluate_milliseconds_total
+            + counting_evaluator.penalty_only_evaluate_milliseconds_total
+        ),
+        initial_penalty=(
+            final_penalty if initial_penalty_value is None else initial_penalty_value
+        ),
+        initial_input_values=initial_input_values,
+    )
+    return LbfgsResult(
+        final_input_values=final_input_values,
+        final_penalty=final_penalty,
+        final_gradient_values=final_gradient_values,
+        final_projected_gradient_norm=final_projected_gradient_norm,
+        stop_reason=_build_lbfgs_stop_reason(
+            final_penalty=final_penalty,
+            final_projected_gradient_norm=final_projected_gradient_norm,
+            gradient_tolerance=config.gradient_tolerance,
+            penalty_tolerance=config.penalty_tolerance,
+            optimizer_success=bool(optimizer_result.success),
+            optimizer_iteration_count=int(optimizer_result.nit),
+            maximum_iteration_count=config.maximum_iteration_count,
+        ),
+        optimizer_message=str(optimizer_result.message),
+        optimizer_iteration_count=int(optimizer_result.nit),
+        optimizer_function_evaluation_count=int(optimizer_result.nfev),
+        run_metrics=run_metrics,
+    )
+
+
 def write_descent_run_record(
     record_path: Path | str,
     gradient_ghx_path: Path | str,
@@ -550,6 +702,30 @@ def write_descent_run_record(
         "compute_url": compute_url,
         "descent_config": _descent_config_to_dict(descent_config),
         "result": descent_result.to_dict(),
+    }
+    output_record_path.write_text(
+        json.dumps(record_payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return output_record_path
+
+
+def write_lbfgs_run_record(
+    record_path: Path | str,
+    gradient_ghx_path: Path | str,
+    lbfgs_config: LbfgsConfig,
+    lbfgs_result: LbfgsResult,
+    compute_url: str,
+) -> Path:
+    """Write one L-BFGS-B run record with metrics, config, and result to JSON."""
+    output_record_path = Path(record_path)
+    output_record_path.parent.mkdir(parents=True, exist_ok=True)
+    record_payload = {
+        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "gradient_ghx_path": str(Path(gradient_ghx_path)),
+        "compute_url": compute_url,
+        "lbfgs_config": _lbfgs_config_to_dict(lbfgs_config),
+        "result": lbfgs_result.to_dict(),
     }
     output_record_path.write_text(
         json.dumps(record_payload, indent=2, ensure_ascii=False),
@@ -623,6 +799,74 @@ def _descent_config_to_dict(descent_config: GradientDescentConfig) -> dict[str, 
         "minimum_step_size": descent_config.minimum_step_size,
         "maximum_line_search_attempts": descent_config.maximum_line_search_attempts,
     }
+
+
+def _lbfgs_config_to_dict(lbfgs_config: LbfgsConfig) -> dict[str, Any]:
+    return {
+        "initial_input_values": dict(lbfgs_config.initial_input_values),
+        "fixed_variable_values": dict(lbfgs_config.fixed_variable_values),
+        "penalty_tolerance": lbfgs_config.penalty_tolerance,
+        "gradient_tolerance": lbfgs_config.gradient_tolerance,
+        "maximum_iteration_count": lbfgs_config.maximum_iteration_count,
+        "history_size": lbfgs_config.history_size,
+        "maximum_line_search_steps": lbfgs_config.maximum_line_search_steps,
+    }
+
+
+def _build_free_variable_nicknames(
+    fixed_variable_values: dict[str, float],
+) -> tuple[str, ...]:
+    return tuple(
+        nickname
+        for nickname in CONTEXTUAL_INPUT_NICKNAMES
+        if nickname not in fixed_variable_values
+    )
+
+
+def _pack_free_variable_values(
+    input_values: dict[str, float],
+    free_variable_nicknames: tuple[str, ...],
+) -> list[float]:
+    return [input_values[nickname] for nickname in free_variable_nicknames]
+
+
+def _unpack_free_variable_values(
+    free_values: list[float],
+    template_input_values: dict[str, float],
+    fixed_variable_values: dict[str, float],
+    free_variable_nicknames: tuple[str, ...],
+) -> dict[str, float]:
+    if len(free_values) != len(free_variable_nicknames):
+        raise GradientDescentError(
+            "L-BFGS-B optimizer vector length mismatch: "
+            f"expected {len(free_variable_nicknames)}, got {len(free_values)}."
+        )
+    input_values = dict(template_input_values)
+    for nickname, value in zip(free_variable_nicknames, free_values, strict=True):
+        input_values[nickname] = float(value)
+    for nickname, fixed_value in fixed_variable_values.items():
+        input_values[nickname] = fixed_value
+    return input_values
+
+
+def _build_lbfgs_stop_reason(
+    final_penalty: float,
+    final_projected_gradient_norm: float,
+    gradient_tolerance: float,
+    penalty_tolerance: float,
+    optimizer_success: bool,
+    optimizer_iteration_count: int,
+    maximum_iteration_count: int,
+) -> str:
+    if final_projected_gradient_norm <= gradient_tolerance:
+        return "converged"
+    if final_penalty <= penalty_tolerance:
+        return "penalty_tolerance_reached"
+    if optimizer_iteration_count >= maximum_iteration_count:
+        return "max_iterations_reached"
+    if optimizer_success:
+        return "optimizer_converged"
+    return "optimizer_stopped"
 
 
 def _read_compute_call_count_per_evaluation(

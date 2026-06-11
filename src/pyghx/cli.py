@@ -40,6 +40,9 @@ from pyghx.gradient_descent import (
     DEFAULT_GRADIENT_TOLERANCE,
     DEFAULT_INITIAL_INPUT_VALUES,
     DEFAULT_INITIAL_STEP_SIZE,
+    DEFAULT_LBFGS_HISTORY_SIZE,
+    DEFAULT_LBFGS_MAXIMUM_LINE_SEARCH_STEPS,
+    DEFAULT_LBFGS_RECORD_PATH,
     DEFAULT_MAXIMUM_ITERATION_COUNT,
     DEFAULT_MAXIMUM_STEP_SIZE,
     DEFAULT_MINIMUM_STEP_SIZE,
@@ -47,10 +50,13 @@ from pyghx.gradient_descent import (
     DEFAULT_STEP_GROWTH_FACTOR,
     GradientDescentConfig,
     GradientDescentError,
+    LbfgsConfig,
     OriginalFiniteDifferenceEvaluator,
     RhinoComputePenaltyGradientEvaluator,
+    run_projected_lbfgs,
     run_projected_gradient_descent,
     write_descent_run_record,
+    write_lbfgs_run_record,
 )
 from pyghx.gradient_transform import GradientTransformError, transform_penalty_graph_for_gradient
 from pyghx.validate import validate_document
@@ -445,6 +451,94 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not write a JSON run record to disk.",
     )
 
+    lbfgs_gradient_parser = subparsers.add_parser(
+        "lbfgs-gradient",
+        help="Run projected L-BFGS-B on a penalty and Gradient evaluator.",
+    )
+    lbfgs_gradient_parser.add_argument("ghx_path", type=Path)
+    lbfgs_gradient_parser.add_argument(
+        "--initial",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Override one initial contextual input value.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--fixed",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Keep one contextual input fixed during optimization.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_PENALTY_TOLERANCE,
+        help="Target penalty tolerance used for result stop classification.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--gradient-tolerance",
+        type=float,
+        default=DEFAULT_GRADIENT_TOLERANCE,
+        help="Stop when the projected Gradient norm is at or below this value.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=DEFAULT_MAXIMUM_ITERATION_COUNT,
+        help="Maximum number of L-BFGS-B iterations.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--history-size",
+        type=int,
+        default=DEFAULT_LBFGS_HISTORY_SIZE,
+        help="Number of correction pairs retained by L-BFGS-B.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--maximum-line-search-steps",
+        type=int,
+        default=DEFAULT_LBFGS_MAXIMUM_LINE_SEARCH_STEPS,
+        help="Maximum L-BFGS-B line-search steps per iteration.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--source-ghx",
+        type=Path,
+        help=(
+            "Original scalar penalty GHX. When set, L-BFGS-B uses external finite "
+            "difference on this file so penalty and gradient come from the same objective."
+        ),
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--finite-difference-step",
+        type=float,
+        default=DEFAULT_FINITE_DIFFERENCE_STEP,
+        help="Forward-difference step used with --source-ghx.",
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--url",
+        default=DEFAULT_RHINO_COMPUTE_URL,
+        help="RhinoCompute base URL.",
+    )
+    lbfgs_gradient_parser.add_argument("--json", action="store_true", help="Emit JSON result.")
+    lbfgs_gradient_parser.add_argument(
+        "--record-json",
+        nargs="?",
+        const=str(DEFAULT_LBFGS_RECORD_PATH),
+        default=str(DEFAULT_LBFGS_RECORD_PATH),
+        metavar="PATH",
+        help=(
+            "Write a run record with metrics and result to JSON. "
+            f"Default: {DEFAULT_LBFGS_RECORD_PATH}"
+        ),
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Do not write a JSON run record to disk.",
+    )
+
     return parser
 
 
@@ -495,6 +589,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_add_gradient_outputs(arguments)
     if arguments.command == "descend-gradient":
         return _run_descend_gradient(arguments)
+    if arguments.command == "lbfgs-gradient":
+        return _run_lbfgs_gradient(arguments)
 
     parser.error(f"Unknown command: {arguments.command}")
     return 2
@@ -773,6 +869,30 @@ def _run_descend_gradient(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_lbfgs_gradient(arguments: argparse.Namespace) -> int:
+    try:
+        lbfgs_config = _build_lbfgs_config(arguments)
+        evaluator = _build_gradient_descent_evaluator(arguments)
+        lbfgs_result = run_projected_lbfgs(evaluator, lbfgs_config)
+    except GradientDescentError as descent_error:
+        print(str(descent_error), file=sys.stderr)
+        return 1
+
+    payload = lbfgs_result.to_dict()
+    if not arguments.no_record:
+        record_path = write_lbfgs_run_record(
+            record_path=Path(arguments.record_json),
+            gradient_ghx_path=arguments.ghx_path,
+            lbfgs_config=lbfgs_config,
+            lbfgs_result=lbfgs_result,
+            compute_url=arguments.url,
+        )
+        payload["record_path"] = str(record_path)
+
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
+
+
 def _build_gradient_descent_evaluator(
     arguments: argparse.Namespace,
 ) -> OriginalFiniteDifferenceEvaluator | RhinoComputePenaltyGradientEvaluator:
@@ -791,27 +911,9 @@ def _build_gradient_descent_evaluator(
 
 
 def _build_gradient_descent_config(arguments: argparse.Namespace) -> GradientDescentConfig:
-    initial_input_values = dict(DEFAULT_INITIAL_INPUT_VALUES)
-    for nickname, raw_value in arguments.initial:
-        if nickname not in CONTEXTUAL_INPUT_NICKNAMES:
-            raise GradientDescentError(
-                f"Unsupported initial input nickname {nickname!r}. "
-                f"Expected one of: {', '.join(CONTEXTUAL_INPUT_NICKNAMES)}."
-            )
-        initial_input_values[nickname] = float(raw_value)
-
-    fixed_variable_values = dict(DEFAULT_FIXED_VARIABLE_VALUES)
-    for nickname, raw_value in arguments.fixed:
-        if nickname not in CONTEXTUAL_INPUT_NICKNAMES:
-            raise GradientDescentError(
-                f"Unsupported fixed input nickname {nickname!r}. "
-                f"Expected one of: {', '.join(CONTEXTUAL_INPUT_NICKNAMES)}."
-            )
-        fixed_variable_values[nickname] = float(raw_value)
-
     return GradientDescentConfig(
-        initial_input_values=initial_input_values,
-        fixed_variable_values=fixed_variable_values,
+        initial_input_values=_build_initial_input_values(arguments.initial),
+        fixed_variable_values=_build_fixed_variable_values(arguments.fixed),
         penalty_tolerance=arguments.tolerance,
         gradient_tolerance=arguments.gradient_tolerance,
         maximum_iteration_count=arguments.max_iterations,
@@ -819,6 +921,50 @@ def _build_gradient_descent_config(arguments: argparse.Namespace) -> GradientDes
         maximum_step_size=arguments.maximum_step_size,
         minimum_step_size=arguments.minimum_step_size,
         step_growth_factor=arguments.step_growth_factor,
+    )
+
+
+def _build_lbfgs_config(arguments: argparse.Namespace) -> LbfgsConfig:
+    return LbfgsConfig(
+        initial_input_values=_build_initial_input_values(arguments.initial),
+        fixed_variable_values=_build_fixed_variable_values(arguments.fixed),
+        penalty_tolerance=arguments.tolerance,
+        gradient_tolerance=arguments.gradient_tolerance,
+        maximum_iteration_count=arguments.max_iterations,
+        history_size=arguments.history_size,
+        maximum_line_search_steps=arguments.maximum_line_search_steps,
+    )
+
+
+def _build_initial_input_values(
+    raw_initial_values: list[tuple[str, str]],
+) -> dict[str, float]:
+    initial_input_values = dict(DEFAULT_INITIAL_INPUT_VALUES)
+    for nickname, raw_value in raw_initial_values:
+        _raise_for_unsupported_contextual_nickname(nickname, "initial input")
+        initial_input_values[nickname] = float(raw_value)
+    return initial_input_values
+
+
+def _build_fixed_variable_values(
+    raw_fixed_variable_values: list[tuple[str, str]],
+) -> dict[str, float]:
+    fixed_variable_values = dict(DEFAULT_FIXED_VARIABLE_VALUES)
+    for nickname, raw_value in raw_fixed_variable_values:
+        _raise_for_unsupported_contextual_nickname(nickname, "fixed input")
+        fixed_variable_values[nickname] = float(raw_value)
+    return fixed_variable_values
+
+
+def _raise_for_unsupported_contextual_nickname(
+    nickname: str,
+    value_role: str,
+) -> None:
+    if nickname in CONTEXTUAL_INPUT_NICKNAMES:
+        return
+    raise GradientDescentError(
+        f"Unsupported {value_role} nickname {nickname!r}. "
+        f"Expected one of: {', '.join(CONTEXTUAL_INPUT_NICKNAMES)}."
     )
 
 

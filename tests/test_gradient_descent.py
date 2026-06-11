@@ -16,8 +16,10 @@ from pyghx.gradient_descent import (
     DEFAULT_INITIAL_INPUT_VALUES,
     GradientDescentConfig,
     GradientDescentError,
+    LbfgsConfig,
     PenaltyGradientEvaluator,
     extract_penalty_and_gradient,
+    run_projected_lbfgs,
     run_projected_gradient_descent,
     write_descent_run_record,
 )
@@ -148,6 +150,33 @@ def test_run_projected_gradient_descent_converges_on_one_degree_of_freedom() -> 
     assert math.isclose(result.final_penalty, 0.0, abs_tol=1e-6)
     assert math.isclose(result.final_input_values["X"], target_x_value, abs_tol=1e-4)
     assert result.final_input_values["Y"] == -0.04
+
+
+def test_run_projected_lbfgs_converges_on_quadratic_surface() -> None:
+    target_values = {
+        "X": 2.0,
+        "Y": -0.04,
+        "Z": 1.0,
+        "RX": -0.5,
+        "RY": 0.25,
+        "RZ": 0.75,
+        "RS": -0.25,
+    }
+    evaluator = PenaltyGradientEvaluator(_build_quadratic_evaluator(target_values))
+    config = LbfgsConfig(
+        initial_input_values=dict(DEFAULT_INITIAL_INPUT_VALUES),
+        fixed_variable_values=dict(DEFAULT_FIXED_VARIABLE_VALUES),
+        penalty_tolerance=1e-12,
+        gradient_tolerance=1e-8,
+        maximum_iteration_count=20,
+    )
+
+    result = run_projected_lbfgs(evaluator, config)
+
+    assert result.stop_reason == "converged"
+    assert result.final_penalty < 1e-12
+    assert result.final_input_values["Y"] == -0.04
+    assert result.run_metrics.evaluation_count <= 5
 
 
 def test_run_projected_gradient_descent_rejects_objective_increasing_steps() -> None:
