@@ -12,7 +12,7 @@ using Grasshopper.Kernel.Types;
 
 public class Script_Instance : GH_ScriptInstance
 {
-    private const double FiniteDifferenceStep = 1.0;
+    private const double FiniteDifferenceStep = 0.01;
     private const int CaseCount = 8;
     private const int DegreeOfFreedomCount = 7;
 

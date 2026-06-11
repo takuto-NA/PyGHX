@@ -32,6 +32,26 @@ from pyghx.script_graph_edit import (
 from pyghx.inspect import inspect_document
 from pyghx.reference import extract_patterns, generate_from_pattern, load_pattern_catalog
 from pyghx.reference.catalog import find_pattern_entry
+from pyghx.gradient_descent import (
+    CONTEXTUAL_INPUT_NICKNAMES,
+    DEFAULT_DESCENT_RECORD_PATH,
+    DEFAULT_FINITE_DIFFERENCE_STEP,
+    DEFAULT_FIXED_VARIABLE_VALUES,
+    DEFAULT_GRADIENT_TOLERANCE,
+    DEFAULT_INITIAL_INPUT_VALUES,
+    DEFAULT_INITIAL_STEP_SIZE,
+    DEFAULT_MAXIMUM_ITERATION_COUNT,
+    DEFAULT_MAXIMUM_STEP_SIZE,
+    DEFAULT_MINIMUM_STEP_SIZE,
+    DEFAULT_PENALTY_TOLERANCE,
+    DEFAULT_STEP_GROWTH_FACTOR,
+    GradientDescentConfig,
+    GradientDescentError,
+    OriginalFiniteDifferenceEvaluator,
+    RhinoComputePenaltyGradientEvaluator,
+    run_projected_gradient_descent,
+    write_descent_run_record,
+)
 from pyghx.gradient_transform import GradientTransformError, transform_penalty_graph_for_gradient
 from pyghx.validate import validate_document
 
@@ -323,6 +343,108 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Derived gradient GHX output path.",
     )
 
+    descend_gradient_parser = subparsers.add_parser(
+        "descend-gradient",
+        help=(
+            "Run projected gradient descent on a gradient-enabled GHX to drive penalty toward zero."
+        ),
+    )
+    descend_gradient_parser.add_argument("ghx_path", type=Path)
+    descend_gradient_parser.add_argument(
+        "--initial",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Override one initial contextual input value.",
+    )
+    descend_gradient_parser.add_argument(
+        "--fixed",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Keep one contextual input fixed during optimization.",
+    )
+    descend_gradient_parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_PENALTY_TOLERANCE,
+        help="Target penalty value reported with the run. Gradient norm controls convergence.",
+    )
+    descend_gradient_parser.add_argument(
+        "--gradient-tolerance",
+        type=float,
+        default=DEFAULT_GRADIENT_TOLERANCE,
+        help="Stop when the projected Gradient norm is at or below this value.",
+    )
+    descend_gradient_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=DEFAULT_MAXIMUM_ITERATION_COUNT,
+        help="Maximum number of accepted gradient descent iterations.",
+    )
+    descend_gradient_parser.add_argument(
+        "--initial-step-size",
+        type=float,
+        default=DEFAULT_INITIAL_STEP_SIZE,
+        help="Initial step size for Armijo backtracking line search.",
+    )
+    descend_gradient_parser.add_argument(
+        "--maximum-step-size",
+        type=float,
+        default=DEFAULT_MAXIMUM_STEP_SIZE,
+        help="Largest step size that line search may try.",
+    )
+    descend_gradient_parser.add_argument(
+        "--minimum-step-size",
+        type=float,
+        default=DEFAULT_MINIMUM_STEP_SIZE,
+        help="Stop line search when trial step falls below this value.",
+    )
+    descend_gradient_parser.add_argument(
+        "--step-growth-factor",
+        type=float,
+        default=DEFAULT_STEP_GROWTH_FACTOR,
+        help="Multiplier for the next trial step after an accepted step.",
+    )
+    descend_gradient_parser.add_argument(
+        "--source-ghx",
+        type=Path,
+        help=(
+            "Original scalar penalty GHX. When set, descent uses external finite "
+            "difference on this file so penalty and gradient come from the same objective."
+        ),
+    )
+    descend_gradient_parser.add_argument(
+        "--finite-difference-step",
+        type=float,
+        default=DEFAULT_FINITE_DIFFERENCE_STEP,
+        help="Forward-difference step used with --source-ghx.",
+    )
+    descend_gradient_parser.add_argument(
+        "--url",
+        default=DEFAULT_RHINO_COMPUTE_URL,
+        help="RhinoCompute base URL.",
+    )
+    descend_gradient_parser.add_argument("--json", action="store_true", help="Emit JSON result.")
+    descend_gradient_parser.add_argument(
+        "--record-json",
+        nargs="?",
+        const=str(DEFAULT_DESCENT_RECORD_PATH),
+        default=str(DEFAULT_DESCENT_RECORD_PATH),
+        metavar="PATH",
+        help=(
+            "Write a run record with metrics and result to JSON. "
+            f"Default: {DEFAULT_DESCENT_RECORD_PATH}"
+        ),
+    )
+    descend_gradient_parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Do not write a JSON run record to disk.",
+    )
+
     return parser
 
 
@@ -371,6 +493,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_generate_from_pattern(arguments)
     if arguments.command == "add-gradient-outputs":
         return _run_add_gradient_outputs(arguments)
+    if arguments.command == "descend-gradient":
+        return _run_descend_gradient(arguments)
 
     parser.error(f"Unknown command: {arguments.command}")
     return 2
@@ -623,6 +747,79 @@ def _run_add_gradient_outputs(arguments: argparse.Namespace) -> int:
 
     print(str(transform_result.output_path))
     return 0
+
+
+def _run_descend_gradient(arguments: argparse.Namespace) -> int:
+    try:
+        descent_config = _build_gradient_descent_config(arguments)
+        evaluator = _build_gradient_descent_evaluator(arguments)
+        descent_result = run_projected_gradient_descent(evaluator, descent_config)
+    except GradientDescentError as descent_error:
+        print(str(descent_error), file=sys.stderr)
+        return 1
+
+    payload = descent_result.to_dict()
+    if not arguments.no_record:
+        record_path = write_descent_run_record(
+            record_path=Path(arguments.record_json),
+            gradient_ghx_path=arguments.ghx_path,
+            descent_config=descent_config,
+            descent_result=descent_result,
+            compute_url=arguments.url,
+        )
+        payload["record_path"] = str(record_path)
+
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _build_gradient_descent_evaluator(
+    arguments: argparse.Namespace,
+) -> OriginalFiniteDifferenceEvaluator | RhinoComputePenaltyGradientEvaluator:
+    if arguments.source_ghx is None:
+        return RhinoComputePenaltyGradientEvaluator(
+            gradient_ghx_path=arguments.ghx_path,
+            compute_url=arguments.url,
+        )
+    if not arguments.source_ghx.is_file():
+        raise GradientDescentError(f"Source GHX file was not found: {arguments.source_ghx}")
+    return OriginalFiniteDifferenceEvaluator(
+        source_ghx_path=arguments.source_ghx,
+        compute_url=arguments.url,
+        finite_difference_step=arguments.finite_difference_step,
+    )
+
+
+def _build_gradient_descent_config(arguments: argparse.Namespace) -> GradientDescentConfig:
+    initial_input_values = dict(DEFAULT_INITIAL_INPUT_VALUES)
+    for nickname, raw_value in arguments.initial:
+        if nickname not in CONTEXTUAL_INPUT_NICKNAMES:
+            raise GradientDescentError(
+                f"Unsupported initial input nickname {nickname!r}. "
+                f"Expected one of: {', '.join(CONTEXTUAL_INPUT_NICKNAMES)}."
+            )
+        initial_input_values[nickname] = float(raw_value)
+
+    fixed_variable_values = dict(DEFAULT_FIXED_VARIABLE_VALUES)
+    for nickname, raw_value in arguments.fixed:
+        if nickname not in CONTEXTUAL_INPUT_NICKNAMES:
+            raise GradientDescentError(
+                f"Unsupported fixed input nickname {nickname!r}. "
+                f"Expected one of: {', '.join(CONTEXTUAL_INPUT_NICKNAMES)}."
+            )
+        fixed_variable_values[nickname] = float(raw_value)
+
+    return GradientDescentConfig(
+        initial_input_values=initial_input_values,
+        fixed_variable_values=fixed_variable_values,
+        penalty_tolerance=arguments.tolerance,
+        gradient_tolerance=arguments.gradient_tolerance,
+        maximum_iteration_count=arguments.max_iterations,
+        initial_step_size=arguments.initial_step_size,
+        maximum_step_size=arguments.maximum_step_size,
+        minimum_step_size=arguments.minimum_step_size,
+        step_growth_factor=arguments.step_growth_factor,
+    )
 
 
 def _parse_numeric_value(raw_value: str) -> float | int:

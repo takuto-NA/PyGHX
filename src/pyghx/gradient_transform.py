@@ -16,6 +16,7 @@ from pyghx.ghx_component_edit import (
     SCRIPT_PARAM_ACCESS_LIST,
     append_context_bake_object,
     append_csharp_script_object,
+    clone_object_by_instance_guid,
     find_context_bake_by_compute_param_name,
     find_get_number_instance_guid,
     find_vector_xyz_for_get_number_sources,
@@ -37,6 +38,7 @@ VECTOR_XYZ_AXIS_NICKNAMES = ("X component", "Y component", "Z component")
 PENALTY_COMPUTE_PARAM_NAME = "penalty"
 GRADIENT_COMPUTE_PARAM_NAME = "Gradient"
 STREAM_FILTER_OUTPUT_PARAM_NAME = "Stream"
+DEFAULT_FINITE_DIFFERENCE_STEP = 0.01
 
 
 class GradientTransformError(Exception):
@@ -303,7 +305,13 @@ def _wire_stream_filter_gate_to_scalar_zero(
 ) -> None:
     """Keep Stream Filter gate scalar so vectorized branches do not break filtering."""
     number_slider_instance_guid = _find_number_slider_instance_guid(root_element)
-    _set_number_slider_value(root_element, number_slider_instance_guid, slider_value=0.0)
+    gate_slider_object, gate_slider_instance_guid = clone_object_by_instance_guid(
+        root_element,
+        number_slider_instance_guid,
+        vertical_offset=420,
+    )
+    _set_object_nickname(gate_slider_object, "GradientStreamGate")
+    _set_number_slider_value(root_element, gate_slider_instance_guid, slider_value=0.0)
     parameter_data_element = stream_filter_object.find(
         './chunks/chunk[@name="Container"]/chunks/chunk[@name="ParameterData"]'
     )
@@ -320,13 +328,23 @@ def _wire_stream_filter_gate_to_scalar_zero(
         set_item_text(
             input_items_element,
             "Source",
-            number_slider_instance_guid,
+            gate_slider_instance_guid,
             item_index="0",
         )
         set_item_text(input_items_element, "SourceCount", "1")
         return
 
     raise GradientTransformError("Stream Filter Gate input was not found.")
+
+
+def _set_object_nickname(
+    object_element: element_tree.Element,
+    nickname: str,
+) -> None:
+    container_element = object_element.find('./chunks/chunk[@name="Container"]')
+    if container_element is None:
+        raise GradientTransformError("Object Container chunk was not found.")
+    set_item_text(container_element.find("items"), "NickName", nickname)
 
 
 def _find_number_slider_instance_guid(

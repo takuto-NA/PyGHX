@@ -174,4 +174,4 @@ uv run pytest -m integration
 
 Profiling (`--profile`, `--profile-solve`, phase breakdown): [docs/compute-profiling.md](docs/compute-profiling.md).
 
-In-graph `penalty` + `Gradient` derivation (`add-gradient-outputs`): [docs/gradient-output.md](docs/gradient-output.md).
+In-graph `penalty` + `Gradient` derivation (`add-gradient-outputs`) and projected gradient descent (`descend-gradient`): [docs/gradient-output.md](docs/gradient-output.md).
