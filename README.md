@@ -171,3 +171,5 @@ Live integration tests expect RhinoCompute at `http://localhost:5000/`.
 ```powershell
 uv run pytest -m integration
 ```
+
+Profiling (`--profile`, `--profile-solve`, phase breakdown): [docs/compute-profiling.md](docs/compute-profiling.md).

@@ -99,6 +99,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="RhinoCompute base URL.",
     )
     compute_parser.add_argument("--json", action="store_true", help="Emit JSON result.")
+    compute_parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Include per-phase timing in the result.",
+    )
+    compute_parser.add_argument(
+        "--profile-solve",
+        action="store_true",
+        help=(
+            "With --profile, issue pointer follow-up requests to estimate "
+            "Grasshopper solve vs definition transfer time."
+        ),
+    )
 
     generate_parser = subparsers.add_parser(
         "generate-minimal",
@@ -373,6 +386,8 @@ def _run_compute(arguments: argparse.Namespace) -> int:
         arguments.ghx_path,
         input_values=input_values,
         compute_url=arguments.url,
+        collect_timing=arguments.profile,
+        estimate_grasshopper_solve=arguments.profile_solve,
     )
     payload = compute_result.to_dict()
     payload["numeric_summary"] = extract_numeric_result(compute_result.outputs)
