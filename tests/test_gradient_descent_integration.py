@@ -195,3 +195,64 @@ def test_descend_gradient_with_source_ghx_uses_original_scalar_penalty() -> None
 
     assert descent_payload["final_penalty"] == source_payload["outputs"]["penalty"][0]
     assert descent_payload["run_metrics"]["initial_penalty"] == source_payload["outputs"]["penalty"][0]
+
+
+@pytest.mark.skipif(
+    descent_gradient_ghx_path() is None or descent_source_ghx_path() is None,
+    reason="Set PYGHX_GRADIENT_SOURCE_GHX to a local scalar penalty GHX.",
+)
+@pytest.mark.skipif(
+    not is_rhino_compute_available(),
+    reason="RhinoCompute is not available on localhost:5000.",
+)
+def test_trace_y_path_cli_smoke_trace_from_zero_to_minus_two(tmp_path: Path) -> None:
+    gradient_ghx_path = descent_gradient_ghx_path()
+    source_ghx_path = descent_source_ghx_path()
+    assert gradient_ghx_path is not None
+    assert source_ghx_path is not None
+    record_jsonl_path = tmp_path / "y_path_trace_smoke.jsonl"
+    record_csv_path = tmp_path / "y_path_trace_smoke.csv"
+
+    completed_process = run_pyghx_cli(
+        [
+            "trace-y-path",
+            str(gradient_ghx_path),
+            "--source-ghx",
+            str(source_ghx_path),
+            "--start-y",
+            "0",
+            "--end-y",
+            "-2",
+            "--y-step",
+            "-1",
+            "--finite-difference-step",
+            "0.001",
+            "--maximum-movement-norm",
+            "0.25",
+            "--max-iterations-per-y",
+            "40",
+            "--record-jsonl",
+            str(record_jsonl_path),
+            "--record-csv",
+            str(record_csv_path),
+            "--url",
+            DEFAULT_RHINO_COMPUTE_URL,
+            "--json",
+        ]
+    )
+    assert completed_process.returncode == 0, completed_process.stderr
+
+    payload = parse_cli_json(completed_process.stdout)
+    assert payload["stop_reason"] in {"completed_all_stations", "station_failed"}
+    assert payload["completed_station_count"] >= 1
+    station_results = payload["station_results"]
+    y_values = [station_result["y_value"] for station_result in station_results]
+    assert y_values[0] == 0.0
+    for station_index, station_result in enumerate(station_results):
+        assert station_result["final_input_values"]["Y"] == station_result["y_value"]
+        if station_index == 0:
+            continue
+        assert station_result["normalized_adjacent_jump"] is not None
+        assert station_result["normalized_adjacent_jump"] <= 0.25
+    assert record_jsonl_path.exists()
+    assert record_csv_path.exists()

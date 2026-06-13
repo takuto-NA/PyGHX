@@ -170,6 +170,23 @@ uv run pyghx lbfgs-gradient path\to\definition_gradient.ghx `
 
 Exact `--source-ghx` L-BFGS-B still costs eight RhinoCompute calls per function/gradient evaluation, but it can require far fewer optimizer iterations than steepest descent because it approximates curvature from recent gradients. Tune `--history-size` and `--maximum-line-search-steps` only after comparing recorded `evaluation_count` and `rhino_compute_call_count`.
 
+The source penalty GHX may expose the scalar as `penalty`; if it has exactly one output, that single output is also accepted as the scalar penalty.
+
+To prevent unconstrained L-BFGS from escaping to a far-away zero-penalty region, cap each movement in normalized units:
+
+```powershell
+uv run pyghx lbfgs-gradient path\to\definition_gradient.ghx `
+  --source-ghx path\to\exact_penalty.ghx `
+  --fixed Y=-10 `
+  --maximum-movement-norm 0.25 `
+  --finite-difference-step 0.01 `
+  --max-iterations 40 `
+  --url http://localhost:5000/ `
+  --json
+```
+
+When `--maximum-movement-norm` is set, pyghx uses a capped L-BFGS loop: it builds an L-BFGS direction, caps `||delta / scale||`, runs penalty-only Armijo line search, and evaluates the full finite-difference gradient only after accepting a step. Default scales are `X/Y/Z/RS=1` and `RX/RY/RZ=10`; override them with `--movement-scale RX=5` if the units need different weighting.
+
 Stop reasons:
 
 - `converged`: projected Gradient norm reached `--gradient-tolerance`
@@ -203,6 +220,102 @@ uv run pytest tests/test_gradient_descent_integration.py -q
 ```
 
 If only the source penalty GHX is available, set `PYGHX_GRADIENT_SOURCE_GHX` instead. The test will derive a temporary gradient GHX under `.pyghx/`.
+
+## Optimization lessons learned
+
+The optimization path is sensitive to which penalty is being optimized. Use the original scalar penalty GHX with `--source-ghx` for production searches. The derived gradient GHX is useful for inspecting one-call vectorized behavior, but its in-graph `penalty` can differ from the original scalar objective because Grasshopper list/tree matching changes graph evaluation. Optimizing against a penalty that does not match the original objective invalidates the search.
+
+Do not square a penalty that is already a residual sum or squared residual. Squaring it again makes the search gradient shrink in already-small penalty regions and can stall progress even when the projected `Gradient` norm remains meaningful. Treat `penalty` as the objective unless the source graph explicitly emits an unsquared residual.
+
+For exact `--source-ghx` finite differences, full gradient evaluations are expensive (`base + 7` calls). Keep line-search trials penalty-only. This makes rejected trials cost one RhinoCompute call instead of recomputing all seven finite-difference perturbations, and it was the most direct improvement for rejected-step overhead.
+
+L-BFGS can reduce the number of accepted optimizer iterations dramatically compared with steepest descent, but unconstrained L-BFGS may escape to a far-away zero-penalty region if the penalty becomes zero once geometry no longer intersects. If a local, physically meaningful solution is required, use `--maximum-movement-norm` and eventually box bounds or regularization. Movement limiting should cap the actual update `delta`, not the raw `Gradient`, because an L-BFGS step is `delta = -H_k * Gradient` and the inverse-Hessian approximation can amplify or rotate the gradient.
+
+Use normalized movement units when applying a cap. Translation, rotation, and scale have different units, so cap `||delta / scale||` instead of the raw Euclidean norm. The current defaults use `X/Y/Z/RS=1` and `RX/RY/RZ=10`; these are only starting scales and should be tuned to the model's physical units.
+
+`SolidIntersection`-based penalties are often nonsmooth. Small input changes can change topology, null/non-null branches, intersection volume, or component output structure. This makes finite-difference gradients noisy or very large near contact transitions. In the observed runs, removing an extra `Square` from an already-large geometric penalty reduced both penalty and gradient scale. For the unsquared exact penalty, `h=0.001` performed better than `h=0.01` and `h=0.0001`: `0.01` was too coarse for some contact transitions, while `0.0001` appeared too close to geometric tolerance/noise and caused many rejected line-search trials.
+
+Recommended starting point for nonsmooth exact geometry penalties:
+
+```powershell
+uv run pyghx lbfgs-gradient path\to\definition_gradient.ghx `
+  --source-ghx path\to\exact_penalty.ghx `
+  --fixed Y=-10 `
+  --finite-difference-step 0.001 `
+  --maximum-movement-norm 0.25 `
+  --max-iterations 80 `
+  --url http://localhost:5000/ `
+  --json
+```
+
+Treat the recorded `run_metrics` as part of the result, not just profiling. Compare `evaluation_count`, `penalty_only_evaluation_count`, rejected trial count, final penalty, and projected gradient norm together. A lower final penalty with many rejected trials may indicate noisy gradients; a smaller movement cap may be stable but too slow; a very small finite-difference step may make the optimizer chase geometry tolerance instead of the objective.
+
+### Y path continuation
+
+Use `trace-y-path` to move `Y` in fixed steps while optimizing the other six variables at each station. Each station reuses the previous station's solution as a warm start, optionally applies a secant prediction, caps normalized movement, and runs capped L-BFGS with the exact `--source-ghx` penalty.
+
+```powershell
+uv run pyghx trace-y-path path\to\definition_gradient.ghx `
+  --source-ghx path\to\exact_penalty.ghx `
+  --start-y 0 `
+  --end-y -50 `
+  --y-step -1 `
+  --finite-difference-step 0.001 `
+  --maximum-movement-norm 0.25 `
+  --max-iterations-per-y 80 `
+  --url http://localhost:5000/ `
+  --json
+```
+
+Outputs:
+
+- `.pyghx/y_path_trace.jsonl`: header config plus one station record per completed `Y`
+- `.pyghx/y_path_trace.csv`: quick summary for plotting and review
+
+Resume after interruption:
+
+```powershell
+uv run pyghx trace-y-path path\to\definition_gradient.ghx `
+  --source-ghx path\to\exact_penalty.ghx `
+  --resume `
+  --json
+```
+
+Runtime guidance:
+
+- Start with a short smoke run such as `Y=0 -> -2` before attempting `Y=0 -> -50`.
+- With the Square-removed exact penalty and `h=0.001`, one station near `Y=-10` took about 250 seconds and roughly 374 RhinoCompute calls.
+- A full `Y=0 -> -50` trace is therefore on the order of several hours unless stations converge faster with warm starts.
+- Use `--resume` and per-station JSONL checkpoints so a long run can continue after interruption.
+
+Observed continuation result for the exact solid-intersection penalty:
+
+- The all-zero pose can be a poor starting branch even when `Y=0` has zero penalty.
+- A better initial branch was found with `RZ=10.569` and `RS=17.6`, leaving the other variables at zero.
+- With `--finite-difference-step 0.001`, `--maximum-movement-norm 0.25`, `--max-iterations-per-y 80`, and `--continue-on-station-failure`, a full `Y=0 -> -50` trace completed 51 stations in about 25.8 minutes and 1239 RhinoCompute calls.
+- The run produced 35 zero-penalty stations, 12 stations below the `0.001` penalty tolerance, and 4 optimizer-stopped stations.
+- The only notable high-penalty range was early in the path: `Y=-2` to `Y=-5`, with maximum penalty about `0.0143` at `Y=-4`.
+- The final `Y=-50` station reached penalty `0.0` at approximately `X=-4.657`, `Z=-1.049`, `RX=-4.281`, `RY=33.233`, `RZ=0.369`, `RS=14.648`.
+
+Example command for that branch:
+
+```powershell
+uv run pyghx trace-y-path path\to\exact_penalty.ghx `
+  --source-ghx path\to\exact_penalty.ghx `
+  --start-y 0 `
+  --end-y -50 `
+  --y-step -1 `
+  --initial RZ=10.569 `
+  --initial RS=17.6 `
+  --finite-difference-step 0.001 `
+  --maximum-movement-norm 0.25 `
+  --max-iterations-per-y 80 `
+  --continue-on-station-failure `
+  --record-jsonl .pyghx\y_path_trace_exact_initial_rz_rs.jsonl `
+  --record-csv .pyghx\y_path_trace_exact_initial_rz_rs.csv `
+  --url http://localhost:5000/ `
+  --json
+```
 
 ## Privacy
 

@@ -27,6 +27,7 @@ def test_cli_help() -> None:
     assert "add-gradient-outputs" in completed_process.stdout
     assert "descend-gradient" in completed_process.stdout
     assert "lbfgs-gradient" in completed_process.stdout
+    assert "trace-y-path" in completed_process.stdout
 
 
 def test_cli_inspect_json_addition() -> None:

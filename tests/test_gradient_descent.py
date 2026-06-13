@@ -18,6 +18,13 @@ from pyghx.gradient_descent import (
     GradientDescentError,
     LbfgsConfig,
     PenaltyGradientEvaluator,
+    YPathTraceConfig,
+    build_station_initial_input_values,
+    build_y_station_values,
+    cap_free_variable_input_delta,
+    measure_normalized_free_variable_jump,
+    run_y_path_trace,
+    extract_penalty_scalar,
     extract_penalty_and_gradient,
     run_projected_lbfgs,
     run_projected_gradient_descent,
@@ -92,6 +99,10 @@ def test_extract_penalty_and_gradient_reads_scalar_and_list() -> None:
     )
     assert penalty_value == 3.5
     assert gradient_values == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+
+
+def test_extract_penalty_scalar_reads_single_non_penalty_output() -> None:
+    assert extract_penalty_scalar({"number": [2.25]}) == 2.25
 
 
 def test_extract_penalty_and_gradient_rejects_missing_gradient() -> None:
@@ -177,6 +188,225 @@ def test_run_projected_lbfgs_converges_on_quadratic_surface() -> None:
     assert result.final_penalty < 1e-12
     assert result.final_input_values["Y"] == -0.04
     assert result.run_metrics.evaluation_count <= 5
+
+
+def test_build_y_station_values_includes_start_and_end() -> None:
+    station_values = build_y_station_values(start_y=0.0, end_y=-50.0, y_step=-1.0)
+
+    assert station_values[0] == 0.0
+    assert station_values[-1] == -50.0
+    assert len(station_values) == 51
+
+
+def test_build_y_station_values_rejects_invalid_step_direction() -> None:
+    with pytest.raises(GradientDescentError, match="must be negative"):
+        build_y_station_values(start_y=0.0, end_y=-50.0, y_step=1.0)
+
+
+def test_build_station_initial_input_values_uses_previous_solution() -> None:
+    path_config = YPathTraceConfig(maximum_movement_norm=0.25)
+    previous_station_final_values = {
+        "X": 1.0,
+        "Y": -1.0,
+        "Z": 2.0,
+        "RX": 3.0,
+        "RY": 4.0,
+        "RZ": 5.0,
+        "RS": 6.0,
+    }
+
+    initial_input_values = build_station_initial_input_values(
+        y_value=-2.0,
+        previous_station_final_values=previous_station_final_values,
+        second_previous_station_final_values=None,
+        path_config=path_config,
+    )
+
+    assert initial_input_values["Y"] == -2.0
+    assert initial_input_values["X"] == 1.0
+    assert initial_input_values["RS"] == 6.0
+
+
+def test_cap_free_variable_input_delta_limits_normalized_jump() -> None:
+    base_input_values = {
+        "X": 0.0,
+        "Y": -1.0,
+        "Z": 0.0,
+        "RX": 0.0,
+        "RY": 0.0,
+        "RZ": 0.0,
+        "RS": 0.0,
+    }
+    target_input_values = {
+        "X": 10.0,
+        "Y": -2.0,
+        "Z": 0.0,
+        "RX": 0.0,
+        "RY": 0.0,
+        "RZ": 0.0,
+        "RS": 0.0,
+    }
+
+    capped_input_values = cap_free_variable_input_delta(
+        base_input_values=base_input_values,
+        target_input_values=target_input_values,
+        fixed_variable_values={"Y": -2.0},
+        movement_scale_values={
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 1.0,
+            "RX": 10.0,
+            "RY": 10.0,
+            "RZ": 10.0,
+            "RS": 1.0,
+        },
+        maximum_movement_norm=0.25,
+    )
+
+    normalized_jump = measure_normalized_free_variable_jump(
+        from_input_values=base_input_values,
+        to_input_values=capped_input_values,
+        fixed_variable_values={"Y": -2.0},
+        movement_scale_values={
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 1.0,
+            "RX": 10.0,
+            "RY": 10.0,
+            "RZ": 10.0,
+            "RS": 1.0,
+        },
+    )
+    assert normalized_jump <= 0.25
+
+
+def test_run_y_path_trace_continues_across_y_stations(tmp_path: Path) -> None:
+    target_values = {
+        "X": 1.0,
+        "Y": 0.0,
+        "Z": 0.5,
+        "RX": -0.25,
+        "RY": 0.25,
+        "RZ": 0.75,
+        "RS": -0.5,
+    }
+    evaluator = PenaltyGradientEvaluator(_build_quadratic_evaluator(target_values))
+    path_config = YPathTraceConfig(
+        start_y=0.0,
+        end_y=-2.0,
+        y_step=-1.0,
+        maximum_iterations_per_y=20,
+        maximum_movement_norm=0.25,
+        use_secant_prediction=False,
+    )
+    record_jsonl_path = tmp_path / "y_path_trace.jsonl"
+    record_csv_path = tmp_path / "y_path_trace.csv"
+
+    path_result = run_y_path_trace(
+        evaluator=evaluator,
+        path_config=path_config,
+        record_jsonl_path=record_jsonl_path,
+        record_csv_path=record_csv_path,
+    )
+
+    assert path_result.stop_reason == "completed_all_stations"
+    assert len(path_result.station_results) == 3
+    assert [station_result.y_value for station_result in path_result.station_results] == [
+        0.0,
+        -1.0,
+        -2.0,
+    ]
+    assert record_jsonl_path.exists()
+    assert record_csv_path.exists()
+    for station_index, station_result in enumerate(path_result.station_results):
+        assert station_result.final_input_values["Y"] == station_result.y_value
+        if station_index == 0:
+            continue
+        previous_station_result = path_result.station_results[station_index - 1]
+        assert station_result.normalized_adjacent_jump is not None
+        assert station_result.normalized_adjacent_jump <= 0.25
+
+
+def test_run_y_path_trace_resume_continues_from_last_station(tmp_path: Path) -> None:
+    target_values = {
+        "X": 1.0,
+        "Y": 0.0,
+        "Z": 0.5,
+        "RX": -0.25,
+        "RY": 0.25,
+        "RZ": 0.75,
+        "RS": -0.5,
+    }
+    evaluator = PenaltyGradientEvaluator(_build_quadratic_evaluator(target_values))
+    path_config = YPathTraceConfig(
+        start_y=0.0,
+        end_y=-2.0,
+        y_step=-1.0,
+        maximum_iterations_per_y=20,
+        maximum_movement_norm=0.25,
+        use_secant_prediction=False,
+    )
+    record_jsonl_path = tmp_path / "y_path_trace.jsonl"
+    record_csv_path = tmp_path / "y_path_trace.csv"
+    run_y_path_trace(
+        evaluator=evaluator,
+        path_config=path_config,
+        record_jsonl_path=record_jsonl_path,
+        record_csv_path=record_csv_path,
+    )
+    completed_jsonl_lines = record_jsonl_path.read_text(encoding="utf-8").splitlines()
+    record_jsonl_path.write_text(
+        "\n".join(completed_jsonl_lines[:2]) + "\n",
+        encoding="utf-8",
+    )
+
+    resumed_path_result = run_y_path_trace(
+        evaluator=evaluator,
+        path_config=path_config,
+        record_jsonl_path=record_jsonl_path,
+        record_csv_path=record_csv_path,
+        resume=True,
+    )
+
+    assert resumed_path_result.stop_reason == "completed_all_stations"
+    assert len(resumed_path_result.station_results) == 3
+    assert resumed_path_result.station_results[-1].y_value == -2.0
+
+
+def test_run_projected_lbfgs_caps_normalized_movement_norm() -> None:
+    target_values = {
+        "X": 10.0,
+        "Y": -0.04,
+        "Z": 0.0,
+        "RX": 0.0,
+        "RY": 0.0,
+        "RZ": 0.0,
+        "RS": 0.0,
+    }
+    evaluator = PenaltyGradientEvaluator(_build_quadratic_evaluator(target_values))
+    initial_input_values = dict(DEFAULT_INITIAL_INPUT_VALUES)
+    config = LbfgsConfig(
+        initial_input_values=initial_input_values,
+        fixed_variable_values=dict(DEFAULT_FIXED_VARIABLE_VALUES),
+        maximum_iteration_count=1,
+        maximum_movement_norm=0.25,
+        movement_scale_values={
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 1.0,
+            "RX": 10.0,
+            "RY": 10.0,
+            "RZ": 10.0,
+            "RS": 1.0,
+        },
+    )
+
+    result = run_projected_lbfgs(evaluator, config)
+
+    movement_norm = abs(result.final_input_values["X"] - initial_input_values["X"])
+    assert movement_norm <= 0.25
+    assert result.run_metrics.penalty_only_evaluation_count >= 1
+    assert result.optimizer_iteration_count == 1
 
 
 def test_run_projected_gradient_descent_rejects_objective_increasing_steps() -> None:

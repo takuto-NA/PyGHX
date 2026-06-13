@@ -43,9 +43,18 @@ from pyghx.gradient_descent import (
     DEFAULT_LBFGS_HISTORY_SIZE,
     DEFAULT_LBFGS_MAXIMUM_LINE_SEARCH_STEPS,
     DEFAULT_LBFGS_RECORD_PATH,
+    DEFAULT_Y_PATH_END_Y,
+    DEFAULT_Y_PATH_FINITE_DIFFERENCE_STEP,
+    DEFAULT_Y_PATH_MAXIMUM_MOVEMENT_NORM,
+    DEFAULT_Y_PATH_MAX_ITERATIONS_PER_Y,
+    DEFAULT_Y_PATH_START_Y,
+    DEFAULT_Y_PATH_STEP,
+    DEFAULT_Y_PATH_TRACE_CSV_PATH,
+    DEFAULT_Y_PATH_TRACE_JSONL_PATH,
     DEFAULT_MAXIMUM_ITERATION_COUNT,
     DEFAULT_MAXIMUM_STEP_SIZE,
     DEFAULT_MINIMUM_STEP_SIZE,
+    DEFAULT_MOVEMENT_SCALE_VALUES,
     DEFAULT_PENALTY_TOLERANCE,
     DEFAULT_STEP_GROWTH_FACTOR,
     GradientDescentConfig,
@@ -55,8 +64,10 @@ from pyghx.gradient_descent import (
     RhinoComputePenaltyGradientEvaluator,
     run_projected_lbfgs,
     run_projected_gradient_descent,
+    run_y_path_trace,
     write_descent_run_record,
     write_lbfgs_run_record,
+    YPathTraceConfig,
 )
 from pyghx.gradient_transform import GradientTransformError, transform_penalty_graph_for_gradient
 from pyghx.validate import validate_document
@@ -503,6 +514,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Maximum L-BFGS-B line-search steps per iteration.",
     )
     lbfgs_gradient_parser.add_argument(
+        "--maximum-movement-norm",
+        type=float,
+        help=(
+            "Cap each accepted movement in normalized units. When set, pyghx uses "
+            "its capped L-BFGS loop with penalty-only Armijo line search."
+        ),
+    )
+    lbfgs_gradient_parser.add_argument(
+        "--movement-scale",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help=(
+            "Scale one variable for normalized movement norm. Defaults: "
+            + ", ".join(
+                f"{nickname}={value:g}"
+                for nickname, value in DEFAULT_MOVEMENT_SCALE_VALUES.items()
+            )
+        ),
+    )
+    lbfgs_gradient_parser.add_argument(
         "--source-ghx",
         type=Path,
         help=(
@@ -537,6 +570,142 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-record",
         action="store_true",
         help="Do not write a JSON run record to disk.",
+    )
+
+    trace_y_path_parser = subparsers.add_parser(
+        "trace-y-path",
+        help="Trace a low-penalty path while moving Y in fixed steps.",
+    )
+    trace_y_path_parser.add_argument("ghx_path", type=Path)
+    trace_y_path_parser.add_argument(
+        "--source-ghx",
+        type=Path,
+        required=True,
+        help="Original scalar penalty GHX used for exact finite-difference evaluation.",
+    )
+    trace_y_path_parser.add_argument(
+        "--start-y",
+        type=float,
+        default=DEFAULT_Y_PATH_START_Y,
+        help="First Y station value.",
+    )
+    trace_y_path_parser.add_argument(
+        "--end-y",
+        type=float,
+        default=DEFAULT_Y_PATH_END_Y,
+        help="Final Y station value.",
+    )
+    trace_y_path_parser.add_argument(
+        "--y-step",
+        type=float,
+        default=DEFAULT_Y_PATH_STEP,
+        help="Y increment between stations.",
+    )
+    trace_y_path_parser.add_argument(
+        "--initial",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Override one initial contextual input value at the first station.",
+    )
+    trace_y_path_parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_PENALTY_TOLERANCE,
+        help="Target penalty tolerance used for station stop classification.",
+    )
+    trace_y_path_parser.add_argument(
+        "--gradient-tolerance",
+        type=float,
+        default=DEFAULT_GRADIENT_TOLERANCE,
+        help="Stop one station when projected Gradient norm is at or below this value.",
+    )
+    trace_y_path_parser.add_argument(
+        "--max-iterations-per-y",
+        type=int,
+        default=DEFAULT_Y_PATH_MAX_ITERATIONS_PER_Y,
+        help="Maximum capped L-BFGS iterations for each Y station.",
+    )
+    trace_y_path_parser.add_argument(
+        "--finite-difference-step",
+        type=float,
+        default=DEFAULT_Y_PATH_FINITE_DIFFERENCE_STEP,
+        help="Forward-difference step used with --source-ghx.",
+    )
+    trace_y_path_parser.add_argument(
+        "--maximum-movement-norm",
+        type=float,
+        default=DEFAULT_Y_PATH_MAXIMUM_MOVEMENT_NORM,
+        help="Cap each station movement in normalized units.",
+    )
+    trace_y_path_parser.add_argument(
+        "--movement-scale",
+        action="append",
+        default=[],
+        type=_parse_key_value_pair,
+        metavar="NICKNAME=VALUE",
+        help="Scale one variable for normalized movement norm.",
+    )
+    trace_y_path_parser.add_argument(
+        "--history-size",
+        type=int,
+        default=DEFAULT_LBFGS_HISTORY_SIZE,
+        help="Number of correction pairs retained by capped L-BFGS.",
+    )
+    trace_y_path_parser.add_argument(
+        "--maximum-line-search-steps",
+        type=int,
+        default=DEFAULT_LBFGS_MAXIMUM_LINE_SEARCH_STEPS,
+        help="Maximum line-search steps per station iteration.",
+    )
+    trace_y_path_parser.add_argument(
+        "--no-secant-prediction",
+        action="store_true",
+        help="Disable secant warm-start prediction between stations.",
+    )
+    trace_y_path_parser.add_argument(
+        "--continue-on-station-failure",
+        action="store_true",
+        help="Continue to the next Y station even when one station stops unsuccessfully.",
+    )
+    trace_y_path_parser.add_argument(
+        "--url",
+        default=DEFAULT_RHINO_COMPUTE_URL,
+        help="RhinoCompute base URL.",
+    )
+    trace_y_path_parser.add_argument("--json", action="store_true", help="Emit JSON result.")
+    trace_y_path_parser.add_argument(
+        "--record-jsonl",
+        nargs="?",
+        const=str(DEFAULT_Y_PATH_TRACE_JSONL_PATH),
+        default=str(DEFAULT_Y_PATH_TRACE_JSONL_PATH),
+        metavar="PATH",
+        help=(
+            "Write per-station JSONL records. "
+            f"Default: {DEFAULT_Y_PATH_TRACE_JSONL_PATH}"
+        ),
+    )
+    trace_y_path_parser.add_argument(
+        "--record-csv",
+        nargs="?",
+        const=str(DEFAULT_Y_PATH_TRACE_CSV_PATH),
+        default=str(DEFAULT_Y_PATH_TRACE_CSV_PATH),
+        metavar="PATH",
+        help=(
+            "Write per-station CSV summary. "
+            f"Default: {DEFAULT_Y_PATH_TRACE_CSV_PATH}"
+        ),
+    )
+    trace_y_path_parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Do not write JSONL or CSV path records to disk.",
+    )
+    trace_y_path_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from the last completed station in --record-jsonl.",
     )
 
     return parser
@@ -591,6 +760,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_descend_gradient(arguments)
     if arguments.command == "lbfgs-gradient":
         return _run_lbfgs_gradient(arguments)
+    if arguments.command == "trace-y-path":
+        return _run_trace_y_path(arguments)
 
     parser.error(f"Unknown command: {arguments.command}")
     return 2
@@ -869,6 +1040,29 @@ def _run_descend_gradient(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_trace_y_path(arguments: argparse.Namespace) -> int:
+    try:
+        path_config = _build_y_path_trace_config(arguments)
+        evaluator = _build_y_path_trace_evaluator(arguments)
+        path_result = run_y_path_trace(
+            evaluator=evaluator,
+            path_config=path_config,
+            record_jsonl_path=None if arguments.no_record else Path(arguments.record_jsonl),
+            record_csv_path=None if arguments.no_record else Path(arguments.record_csv),
+            resume=arguments.resume,
+        )
+    except GradientDescentError as descent_error:
+        print(str(descent_error), file=sys.stderr)
+        return 1
+
+    payload = path_result.to_dict()
+    if not arguments.no_record:
+        payload["record_jsonl_path"] = str(arguments.record_jsonl)
+        payload["record_csv_path"] = str(arguments.record_csv)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
+
+
 def _run_lbfgs_gradient(arguments: argparse.Namespace) -> int:
     try:
         lbfgs_config = _build_lbfgs_config(arguments)
@@ -891,6 +1085,44 @@ def _run_lbfgs_gradient(arguments: argparse.Namespace) -> int:
 
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
+
+
+def _build_y_path_trace_config(arguments: argparse.Namespace) -> YPathTraceConfig:
+    initial_input_values = {
+        nickname: 0.0 for nickname in CONTEXTUAL_INPUT_NICKNAMES
+    }
+    for nickname, raw_value in arguments.initial:
+        _raise_for_unsupported_contextual_nickname(nickname, "initial input")
+        initial_input_values[nickname] = float(raw_value)
+    initial_input_values["Y"] = arguments.start_y
+    return YPathTraceConfig(
+        start_y=arguments.start_y,
+        end_y=arguments.end_y,
+        y_step=arguments.y_step,
+        initial_input_values=initial_input_values,
+        finite_difference_step=arguments.finite_difference_step,
+        maximum_movement_norm=arguments.maximum_movement_norm,
+        maximum_iterations_per_y=arguments.max_iterations_per_y,
+        penalty_tolerance=arguments.tolerance,
+        gradient_tolerance=arguments.gradient_tolerance,
+        history_size=arguments.history_size,
+        maximum_line_search_steps=arguments.maximum_line_search_steps,
+        movement_scale_values=_build_movement_scale_values(arguments.movement_scale),
+        use_secant_prediction=not arguments.no_secant_prediction,
+        continue_on_station_failure=arguments.continue_on_station_failure,
+    )
+
+
+def _build_y_path_trace_evaluator(
+    arguments: argparse.Namespace,
+) -> OriginalFiniteDifferenceEvaluator:
+    if not arguments.source_ghx.is_file():
+        raise GradientDescentError(f"Source GHX file was not found: {arguments.source_ghx}")
+    return OriginalFiniteDifferenceEvaluator(
+        source_ghx_path=arguments.source_ghx,
+        compute_url=arguments.url,
+        finite_difference_step=arguments.finite_difference_step,
+    )
 
 
 def _build_gradient_descent_evaluator(
@@ -933,6 +1165,8 @@ def _build_lbfgs_config(arguments: argparse.Namespace) -> LbfgsConfig:
         maximum_iteration_count=arguments.max_iterations,
         history_size=arguments.history_size,
         maximum_line_search_steps=arguments.maximum_line_search_steps,
+        maximum_movement_norm=arguments.maximum_movement_norm,
+        movement_scale_values=_build_movement_scale_values(arguments.movement_scale),
     )
 
 
@@ -954,6 +1188,16 @@ def _build_fixed_variable_values(
         _raise_for_unsupported_contextual_nickname(nickname, "fixed input")
         fixed_variable_values[nickname] = float(raw_value)
     return fixed_variable_values
+
+
+def _build_movement_scale_values(
+    raw_movement_scale_values: list[tuple[str, str]],
+) -> dict[str, float]:
+    movement_scale_values = dict(DEFAULT_MOVEMENT_SCALE_VALUES)
+    for nickname, raw_value in raw_movement_scale_values:
+        _raise_for_unsupported_contextual_nickname(nickname, "movement scale")
+        movement_scale_values[nickname] = float(raw_value)
+    return movement_scale_values
 
 
 def _raise_for_unsupported_contextual_nickname(
